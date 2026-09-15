@@ -1,0 +1,69 @@
+[
+    {
+        "id": "eyes_tab",
+        "type": "tab",
+        "label": "Halloween Eyes",
+        "disabled": false,
+        "info": "MQTT output for the projected eyes.\n\nWire your sun state machine into 'Set ON' or 'Set OFF'. One message does\neverything: demoneye powers the projector over IR, un-blanks the display,\nand both Pis (brain + follower) react together.\n\nRetained + QoS 1, so a Pi rebooting mid-evening picks up the current state\nimmediately instead of waiting for the next transition."
+    },
+    {
+        "id": "eyes_broker",
+        "type": "mqtt-broker",
+        "name": "Mosquitto",
+        "broker": "192.168.1.10",
+        "port": "1883",
+        "clientid": "nodered-halloween",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true
+    },
+    {
+        "id": "set_on",
+        "type": "change",
+        "z": "eyes_tab",
+        "name": "Set ON",
+        "rules": [
+            { "t": "set", "p": "payload", "pt": "msg", "to": "on", "tot": "str" }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 300,
+        "y": 120,
+        "wires": [["eyes_command"]]
+    },
+    {
+        "id": "set_off",
+        "type": "change",
+        "z": "eyes_tab",
+        "name": "Set OFF",
+        "rules": [
+            { "t": "set", "p": "payload", "pt": "msg", "to": "off", "tot": "str" }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 300,
+        "y": 200,
+        "wires": [["eyes_command"]]
+    },
+    {
+        "id": "eyes_command",
+        "type": "mqtt out",
+        "z": "eyes_tab",
+        "name": "eyes command",
+        "topic": "halloween/eyes/command",
+        "qos": "1",
+        "retain": "true",
+        "broker": "eyes_broker",
+        "x": 560,
+        "y": 160,
+        "wires": []
+    }
+]

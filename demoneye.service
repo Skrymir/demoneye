@@ -1,0 +1,50 @@
+[Unit]
+Description=Demon Eye Halloween Projection
+After=network-online.target
+Wants=network-online.target
+# Take the console from getty so nothing else holds the display.
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+# (set to your user/paths if different)
+User=joshc
+WorkingDirectory=/home/joshc/demoneye
+
+# Draw straight to HDMI from the console (no desktop needed).
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=EYE_GL=es
+# Pi 5 exposes TWO DRM cards: one render-only (V3D) and one that actually drives
+# HDMI. SDL defaults to index 0 and fails with "kmsdrm not available" if that's
+# the render node. Find the display card -- it's the one with connectors:
+#     ls /sys/class/drm/        (look for cardN-HDMI-A-1)
+# then set the index to that N. Numbering isn't guaranteed stable across
+# hardware, so set it explicitly on each Pi.
+Environment=SDL_KMSDRM_DEVICE_INDEX=1
+
+# A system service isn't part of a login session, so it doesn't inherit the
+# seat's device ACLs. Grant GPU access explicitly and attach the service to a
+# VT so SDL's KMSDRM backend can become DRM master.
+SupplementaryGroups=video render input
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+
+# MQTT broker + placement come from config.ini in WorkingDirectory.
+# (Optional: uncomment to override the config file's credentials from here.)
+#Environment=MQTT_USER=
+#Environment=MQTT_PASS=
+
+# >>> Change --role to "brain" on ONE Pi and "follower" on the other <<<
+# Add --eye human|walker for the other eyes (use the SAME --eye on both Pis).
+ExecStart=/home/joshc/demoneye/venv/bin/python /home/joshc/demoneye/demoneye.py --role follower
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

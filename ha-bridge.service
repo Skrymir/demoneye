@@ -1,0 +1,17 @@
+[Unit]
+Description=Home Assistant -> Eye Target Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=joshc
+WorkingDirectory=/home/joshc/demoneye
+# Keep the HA token out of bridge.ini by setting it here instead (recommended):
+# Environment=HA_TOKEN=your-long-lived-token
+ExecStart=/home/joshc/demoneye/venv/bin/python /home/joshc/demoneye/ha_bridge.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

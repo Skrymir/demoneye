@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""
+Home Assistant -> eye target bridge.
+
+Connects to Home Assistant over its WebSocket API, watches an Everything Presence
+Pro's mmWave target coordinates (LD2450, up to 3 targets, X/Y in millimetres),
+picks the nearest active target, normalizes its lateral position to the eye's
+gaze range (-1..+1), and publishes it to the eye's MQTT target topic. The brain
+then snaps the eyes to it and follows. When no target is present it releases and
+the eyes drift back to idle.
+
+Run:  python ha_bridge.py   (reads bridge.ini next to it; HA_TOKEN env overrides)
+
+This runs anywhere that can reach both Home Assistant and your MQTT broker — the
+brain Pi is a fine home for it.
+"""
+
+import asyncio
+import configparser
+import json
+import math
+import os
+import sys
+import time
+
+import websockets
+import paho.mqtt.client as mqtt
+
+
+# ---------------------------------------------------------------------------
+def _f(v):
+    """Parse a HA state string to float, or None if unknown/unavailable/blank."""
+    try:
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if s in ("", "unknown", "unavailable", "none"):
+            return None
+        return float(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _truthy(v):
+    return str(v).strip().lower() in ("on", "true", "1", "home", "detected", "occupied", "yes")
+
+
+class Config:
+    def __init__(self, path):
+        cp = configparser.ConfigParser()
+        cp.read_dict({
+            "home_assistant": {"url": "ws://homeassistant.local:8123/api/websocket", "token": ""},
+            "entities": {
+                "target_count": "3",
+                "x_pattern": "sensor.presence_pro_target_{n}_x",
+                "y_pattern": "sensor.presence_pro_target_{n}_y",
+                "active_pattern": "binary_sensor.presence_pro_target_{n}_active",
+            },
+            "mqtt": {"host": "192.168.1.10", "port": "1883", "username": "", "password": "",
+                     "target_topic": "halloween/eyes/target",
+                     "command_topic": "halloween/eyes/command",
+                     "follow_command": "true", "start_enabled": "false"},
+            "calibration": {
+                "x_range_mm": "3000", "x_offset_mm": "0", "invert_x": "false",
+                "y_from_distance": "false", "y_near_mm": "500", "y_far_mm": "4000",
+                "smooth_factor": "0.6", "publish_hz": "20", "heartbeat_s": "0.75",
+                "hold_s": "2.0",
+            },
+        })
+        if path and os.path.exists(path):
+            cp.read(path)
+            print(f"[cfg] loaded {path}", flush=True)
+        else:
+            print(f"[cfg] {path} not found — using defaults", flush=True)
+
+        self.url = cp.get("home_assistant", "url")
+        self.token = os.environ.get("HA_TOKEN") or cp.get("home_assistant", "token")
+
+        n = cp.getint("entities", "target_count")
+        xp = cp.get("entities", "x_pattern")
+        yp = cp.get("entities", "y_pattern")
+        ap = cp.get("entities", "active_pattern")
+        self.targets = []
+        for i in range(1, n + 1):
+            self.targets.append({
+                "x": xp.format(n=i),
+                "y": yp.format(n=i),
+                "active": ap.format(n=i) if ap.strip() else None,
+            })
+        # flat set of every entity we track
+        self.entities = set()
+        for t in self.targets:
+            self.entities.update(v for v in t.values() if v)
+
+        self.mqtt_host = cp.get("mqtt", "host")
+        self.mqtt_port = cp.getint("mqtt", "port")
+        self.mqtt_user = cp.get("mqtt", "username")
+        self.mqtt_pass = cp.get("mqtt", "password")
+        self.topic = cp.get("mqtt", "target_topic")
+        self.command_topic = cp.get("mqtt", "command_topic")
+        self.follow_command = cp.getboolean("mqtt", "follow_command")
+        self.start_enabled = cp.getboolean("mqtt", "start_enabled")
+
+        self.x_range = cp.getfloat("calibration", "x_range_mm")
+        self.x_offset = cp.getfloat("calibration", "x_offset_mm")
+        self.invert_x = cp.getboolean("calibration", "invert_x")
+        self.y_from_distance = cp.getboolean("calibration", "y_from_distance")
+        self.y_near = cp.getfloat("calibration", "y_near_mm")
+        self.y_far = cp.getfloat("calibration", "y_far_mm")
+        self.smooth = min(1.0, max(0.01, cp.getfloat("calibration", "smooth_factor")))
+        self.min_interval = 1.0 / max(1.0, cp.getfloat("calibration", "publish_hz"))
+        self.heartbeat = cp.getfloat("calibration", "heartbeat_s")
+        self.hold = cp.getfloat("calibration", "hold_s")
+
+
+def _clamp(v, lo=-1.0, hi=1.0):
+    return lo if v < lo else hi if v > hi else v
+
+
+# ---------------------------------------------------------------------------
+class Bridge:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.cache = {}          # entity_id -> state string
+        self.sx = 0.0            # smoothed gaze x
+        self.sy = 0.0
+        self.have = False        # a target is currently present
+        self.last_pub = 0.0
+        self.client = None
+        # When follow_command is on, the bridge only publishes targets while the
+        # show is running — no point streaming radar data all day. It listens on
+        # the same command topic the eyes use, so one message controls both.
+        self.enabled = True if not cfg.follow_command else cfg.start_enabled
+
+    # -- target math (pure, unit-tested) --
+    def pick_target(self):
+        """Return (x_mm, y_mm) of the nearest present target, or None."""
+        best = None
+        best_d = 1e18
+        for t in self.cfg.targets:
+            x = _f(self.cache.get(t["x"]))
+            y = _f(self.cache.get(t["y"]))
+            if x is None or y is None:
+                continue
+            act = self.cache.get(t["active"]) if t["active"] else None
+            if act is not None and not _truthy(act):
+                continue
+            if abs(x) < 1.0 and abs(y) < 1.0:      # empty LD2450 slot reads ~0,0
+                continue
+            d = math.hypot(x, y)
+            if d < best_d:
+                best_d = d
+                best = (x, y)
+        return best
+
+    def normalize(self, x_mm, y_mm):
+        gx = _clamp((x_mm - self.cfg.x_offset) / self.cfg.x_range)
+        if self.cfg.invert_x:
+            gx = -gx
+        if self.cfg.y_from_distance and self.cfg.y_far != self.cfg.y_near:
+            # closer target -> eye looks further "down" (-1); far -> level (0)
+            frac = (self.cfg.y_far - y_mm) / (self.cfg.y_far - self.cfg.y_near)
+            gy = -_clamp(frac, 0.0, 1.0)
+        else:
+            gy = 0.0
+        return gx, gy
+
+    # -- MQTT --
+    ON_WORDS = {"on", "1", "true", "play", "start", "yes", "open"}
+    OFF_WORDS = {"off", "0", "false", "stop", "pause", "no", "close"}
+
+    def _on_command(self, client, userdata, msg):
+        """Enable/disable target publishing from the eyes' command topic."""
+        try:
+            v = msg.payload.decode(errors="ignore").strip().strip('"').lower()
+        except Exception:
+            return
+        if v.startswith("{"):
+            try:
+                v = str(json.loads(msg.payload).get("state", "")).strip().lower()
+            except Exception:
+                return
+        want = True if v in self.ON_WORDS else False if v in self.OFF_WORDS else None
+        if want is None or want == self.enabled:
+            return
+        self.enabled = want
+        print(f"[bridge] tracking {'enabled' if want else 'disabled'}", flush=True)
+        if not want and self.have:
+            self.have = False          # release any held target as we go quiet
+            self._publish_clear()
+
+    def _connect_mqtt(self):
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="ha-eye-bridge")
+        if self.cfg.mqtt_user:
+            self.client.username_pw_set(self.cfg.mqtt_user, self.cfg.mqtt_pass)
+        if self.cfg.follow_command:
+            self.client.message_callback_add(self.cfg.command_topic, self._on_command)
+
+            def _on_connect(c, u, flags, rc, props):
+                c.subscribe(self.cfg.command_topic, qos=1)
+                print(f"[bridge] following {self.cfg.command_topic} "
+                      f"(currently {'enabled' if self.enabled else 'disabled'})", flush=True)
+            self.client.on_connect = _on_connect
+        self.client.connect(self.cfg.mqtt_host, self.cfg.mqtt_port, keepalive=30)
+        self.client.loop_start()
+
+    def _publish_target(self, gx, gy):
+        payload = json.dumps({"x": round(gx, 4), "y": round(gy, 4), "hold": self.cfg.hold})
+        self.client.publish(self.cfg.topic, payload, qos=0)
+
+    def _publish_clear(self):
+        self.client.publish(self.cfg.topic, "clear", qos=0)
+
+    def evaluate(self, force=False):
+        """Recompute from the cache and publish (rate-limited)."""
+        if not self.enabled:
+            return
+        now = time.monotonic()
+        target = self.pick_target()
+        if target is None:
+            if self.have:                       # just lost the target
+                self.have = False
+                self._publish_clear()
+                print("[tgt] cleared", flush=True)
+            return
+        gx, gy = self.normalize(*target)
+        if not self.have:                        # fresh acquisition: snap (no smoothing)
+            self.sx, self.sy = gx, gy
+            self.have = True
+            print(f"[tgt] acquired  x={gx:+.2f} y={gy:+.2f}", flush=True)
+        else:
+            a = self.cfg.smooth
+            self.sx += (gx - self.sx) * a
+            self.sy += (gy - self.sy) * a
+        if force or (now - self.last_pub) >= self.cfg.min_interval:
+            self._publish_target(self.sx, self.sy)
+            self.last_pub = now
+
+    # -- Home Assistant WebSocket --
+    async def _session(self):
+        async with websockets.connect(self.cfg.url, max_size=8 * 1024 * 1024,
+                                      ping_interval=20) as ws:
+            # auth handshake
+            hello = json.loads(await ws.recv())
+            if hello.get("type") != "auth_required":
+                raise RuntimeError(f"unexpected first message: {hello.get('type')}")
+            await ws.send(json.dumps({"type": "auth", "access_token": self.cfg.token}))
+            ack = json.loads(await ws.recv())
+            if ack.get("type") != "auth_ok":
+                raise RuntimeError(f"auth failed: {ack}")
+            print("[ha] authenticated", flush=True)
+
+            # seed current states
+            await ws.send(json.dumps({"id": 1, "type": "get_states"}))
+            # subscribe to state changes
+            await ws.send(json.dumps({"id": 2, "type": "subscribe_events",
+                                      "event_type": "state_changed"}))
+
+            async for raw in ws:
+                msg = json.loads(raw)
+                mtype = msg.get("type")
+                if mtype == "result" and msg.get("id") == 1 and msg.get("success"):
+                    for st in msg.get("result", []):
+                        eid = st.get("entity_id")
+                        if eid in self.cfg.entities:
+                            self.cache[eid] = st.get("state")
+                    print(f"[ha] seeded {len(self.cache)} entities", flush=True)
+                    self.evaluate(force=True)
+                elif mtype == "event":
+                    data = msg.get("event", {}).get("data", {})
+                    eid = data.get("entity_id")
+                    if eid in self.cfg.entities:
+                        ns = data.get("new_state") or {}
+                        self.cache[eid] = ns.get("state")
+                        self.evaluate()
+
+    async def _heartbeat(self):
+        # keep a stationary target alive so the eye doesn't time out on it
+        while True:
+            await asyncio.sleep(self.cfg.heartbeat)
+            if self.enabled and self.have:
+                self._publish_target(self.sx, self.sy)
+
+    async def run(self):
+        self._connect_mqtt()
+        asyncio.ensure_future(self._heartbeat())
+        backoff = 1.0
+        while True:
+            try:
+                await self._session()
+            except Exception as e:
+                print(f"[ha] disconnected: {e} — retrying in {backoff:.0f}s", flush=True)
+                self.cache.clear()
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+            else:
+                backoff = 1.0
+
+
+def main():
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge.ini")
+    cfg = Config(sys.argv[1] if len(sys.argv) > 1 else cfg_path)
+    if not cfg.token:
+        print("No HA token. Set it in bridge.ini or the HA_TOKEN env var.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        asyncio.run(Bridge(cfg).run())
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
