@@ -4,16 +4,72 @@
 
 | File | Goes on | Purpose |
 |---|---|---|
-| `demoneye.py` | both Pis | the eye app |
-| `eye_shaders.py` | both Pis | the three eye shaders (demon / human / walker) |
+| `demoneye.py` | both Pis | the app (window, MQTT, loop, watchdog) |
+| `settings.py` `renderers.py` `directors.py` `stage.py` | both Pis | behaviour + rendering |
+| `eye_shaders.py` `stage_shaders.py` `glsl_common.py` `glutil.py` | both Pis | the shaders |
+| `stats.py` | both Pis | `--stats` readout |
 | `ir_control.py` | Pis with an IR transmitter | projector power via `ir-ctl` |
-| `stats.py` | both Pis | `--stats` performance readout |
 | `config.ini` | both Pis | **per-Pi** settings — differs between them |
 | `requirements.txt` | both Pis | python deps |
 | `demoneye.service` | both Pis | autostart on boot |
-| `ha_bridge.py`, `bridge.ini`, `requirements-bridge.txt`, `ha-bridge.service` | ONE machine only | mmWave tracking bridge |
-| `track_test.py` | anywhere | simulate targets for testing |
+| `figures/` | both Pis (if using sprites) | sprite atlases |
+| `ha_bridge.py` `bridge.ini` `requirements-bridge.txt` `ha-bridge.service` | ONE machine only | mmWave tracking bridge |
+| `sprite_atlas.py` `track_test.py` `tests/` | anywhere | tools + tests |
 | `nodered_flow.json` | Home Assistant | Node-RED MQTT output nodes |
+
+The simplest deployment is `git pull` on each Pi — every file above is in the
+repo except each Pi's own `config.ini` values (see `.gitignore`).
+
+## Check both Pis' settings: `check_config.py`
+
+```bash
+python3 check_config.py           # both Pis, read-only (eyes + tracking bridge)
+```
+
+Checks each `config.ini` (unknown keys and typos, types and ranges, inline
+comments — which the app does **not** strip, so `mirror = true ; note` breaks
+startup), that the broker is reachable from each Pi, the IR setup, the
+installed service's role/mode/eye, and that `SDL_KMSDRM_DEVICE_INDEX` matches
+the HDMI card the projector is on. Then the pair: exactly one brain, same
+show, same broker and topics, `mirror` on one Pi at most, and non-overlapping
+stage spans. Exits non-zero on any error. `--file a.ini b.ini` checks local
+copies without ssh (a `bridge.ini` is recognised and checked against the
+bridge's own keys).
+
+It also reports the **tracking bridge** on each Pi: whether `ha-bridge.service`
+is installed, enabled and running (with its last log line if it's failing),
+the `bridge.ini` keys, that there's an HA token (`/etc/ha-bridge.env`), its
+Python deps, that Home Assistant is reachable, and that its broker and topics
+match that Pi's `config.ini`. Across the pair it errors if the bridge runs on
+**both** Pis and warns if it runs on neither.
+
+## Updating both Pis: `./deploy.sh`
+
+From your Mac, in the project folder:
+
+```bash
+./deploy.sh                 # test, copy to both Pis, install deps, restart, show logs
+./deploy.sh pi-eye-right.home    # just one Pi
+./deploy.sh --no-restart    # copy only
+```
+
+It runs the test suite first and refuses to ship if anything fails. Each Pi's
+own `config.ini` / `bridge.ini` and its `venv` are never copied over or
+deleted, so per-Pi placement, `mirror` and stage spans survive every deploy.
+Only changed files are sent. On the Pi that runs the tracking bridge, it
+restarts `ha-bridge` too so the new code takes effect.
+
+One-time setup (so it doesn't prompt for passwords):
+```bash
+ssh-copy-id joshc@pi-eye-left.home
+ssh-copy-id joshc@pi-eye-right.home
+```
+and on each Pi, allow the service restarts without a password:
+```bash
+echo 'joshc ALL=(root) NOPASSWD: /usr/bin/systemctl restart demoneye, /usr/bin/systemctl restart ha-bridge' \
+  | sudo tee /etc/sudoers.d/demoneye && sudo chmod 440 /etc/sudoers.d/demoneye
+```
+Edit `PIS=(...)` at the top of `deploy.sh` if your hostnames differ.
 
 ## Second Pi, from scratch
 
@@ -43,10 +99,12 @@ You should get `[gl] OpenGL ES ... (GLES)` and an eye on the projector.
 
 ```ini
 [display]
-center_x = 0.50        ; aim THIS projector
+; aim THIS projector
+center_x = 0.50
 center_y = 0.50
 scale    = 1.00
-mirror   = true        ; on ONE Pi only, so the pair is symmetric
+; on ONE Pi only, so the pair is symmetric
+mirror   = true
 ```
 
 And in the service file, `--role follower` (exactly one Pi is `brain`).

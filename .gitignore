@@ -1,59 +1,10 @@
-# --- Python ---
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-
-# --- Virtual environments (rebuild with: python3 -m venv venv) ---
 venv/
-venv*/
 .venv/
-
-# --- Secrets: keep tokens and passwords out of the repo ---
-# Copy the shipped *.ini to *.local.ini for machine-specific values, or use
-# HA_TOKEN / MQTT_USER / MQTT_PASS env vars (the code prefers those).
-*.local.ini
-.env
-*.env
-secrets/
-
-# --- Per-machine config overrides (the shipped config.ini / bridge.ini are
-#     templates; per-Pi copies with real broker IPs and placement live here) ---
-config.*.ini
-bridge.*.ini
-
-# --- Sprite source frames and generated atlases ---
-# Commit figures/*.png + .json only if you want the atlases versioned; the
-# raw Blender/photo frame sequences are large and reproducible.
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+*.zip
+*.log
 frames/
 frames_*/
-*.blend1
-*.blend@
-
-# --- Renders, scratch and logs from development ---
-*.png
-!figures/*.png
-*.jpg
-*.mp4
-*.gif
-*.log
-*.json
-!figures/*.json
-!nodered_flow.json
-_*.py
-_*.sh
-scratch/
-tmp/
-
-# --- Packaging output ---
-*.zip
-dist/
-build/
-
-# --- Editors / OS ---
-.vscode/
-.idea/
-*.swp
-*.swo
-.DS_Store
-Thumbs.db

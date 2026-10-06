@@ -12,7 +12,11 @@ the eyes drift back to idle.
 Run:  python ha_bridge.py   (reads bridge.ini next to it; HA_TOKEN env overrides)
 
 This runs anywhere that can reach both Home Assistant and your MQTT broker — the
-brain Pi is a fine home for it.
+brain Pi is a fine home for it. Run it on ONE machine only.
+
+On/off: with follow_command = true (the default) it obeys the same command topic
+as the eyes. While the show is off it publishes nothing to MQTT and doesn't even
+hold a connection to Home Assistant; "on" connects, seeds and starts tracking.
 """
 
 import asyncio
@@ -52,16 +56,16 @@ class Config:
             "home_assistant": {"url": "ws://homeassistant.local:8123/api/websocket", "token": ""},
             "entities": {
                 "target_count": "3",
-                "x_pattern": "sensor.presence_pro_target_{n}_x",
-                "y_pattern": "sensor.presence_pro_target_{n}_y",
-                "active_pattern": "binary_sensor.presence_pro_target_{n}_active",
+                "x_pattern": "sensor.s1_pro_multi_sense_ae8394_target_{n}_x",
+                "y_pattern": "sensor.s1_pro_multi_sense_ae8394_target_{n}_y",
+                "active_pattern": "",
             },
             "mqtt": {"host": "192.168.1.10", "port": "1883", "username": "", "password": "",
                      "target_topic": "halloween/eyes/target",
                      "command_topic": "halloween/eyes/command",
                      "follow_command": "true", "start_enabled": "false"},
             "calibration": {
-                "x_range_mm": "3000", "x_offset_mm": "0", "invert_x": "false",
+                "x_range_mm": "250", "x_offset_mm": "0", "invert_x": "false",
                 "y_from_distance": "false", "y_near_mm": "500", "y_far_mm": "4000",
                 "smooth_factor": "0.6", "publish_hz": "20", "heartbeat_s": "0.75",
                 "hold_s": "2.0",
@@ -131,6 +135,18 @@ class Bridge:
         # show is running — no point streaming radar data all day. It listens on
         # the same command topic the eyes use, so one message controls both.
         self.enabled = True if not cfg.follow_command else cfg.start_enabled
+        self._loop = None        # asyncio loop, so the MQTT thread can wake it
+        self._on_evt = None
+        self._off_evt = None
+
+    def _sync_events(self):
+        """Mirror self.enabled into the asyncio events (runs on the loop)."""
+        if self._on_evt is None:
+            return
+        if self.enabled:
+            self._off_evt.clear(); self._on_evt.set()
+        else:
+            self._on_evt.clear(); self._off_evt.set()
 
     # -- target math (pure, unit-tested) --
     def pick_target(self):
@@ -188,6 +204,8 @@ class Bridge:
         if not want and self.have:
             self.have = False          # release any held target as we go quiet
             self._publish_clear()
+        if self._loop is not None:     # paho thread -> wake the HA connection loop
+            self._loop.call_soon_threadsafe(self._sync_events)
 
     def _connect_mqtt(self):
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="ha-eye-bridge")
@@ -282,19 +300,42 @@ class Bridge:
                 self._publish_target(self.sx, self.sy)
 
     async def run(self):
+        self._loop = asyncio.get_running_loop()
+        self._on_evt, self._off_evt = asyncio.Event(), asyncio.Event()
+        self._sync_events()
         self._connect_mqtt()
         asyncio.ensure_future(self._heartbeat())
         backoff = 1.0
         while True:
-            try:
-                await self._session()
-            except Exception as e:
-                print(f"[ha] disconnected: {e} — retrying in {backoff:.0f}s", flush=True)
+            if not self.enabled:
+                # Show is off: no point holding a Home Assistant connection and
+                # receiving every state change in the house. Wait for "on".
+                print("[ha] show is off — not connected to Home Assistant until 'on'", flush=True)
+                await self._on_evt.wait()
+            started = time.monotonic()
+            session = asyncio.ensure_future(self._session())
+            went_off = asyncio.ensure_future(self._off_evt.wait())
+            done, _ = await asyncio.wait({session, went_off},
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if went_off in done:
+                session.cancel()
+                try:
+                    await session
+                except BaseException:
+                    pass
                 self.cache.clear()
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
-            else:
+                print("[ha] disconnected — show turned off", flush=True)
                 backoff = 1.0
+                continue
+            went_off.cancel()
+            e = session.exception()
+            self.cache.clear()
+            if time.monotonic() - started > 60:
+                backoff = 1.0              # it was up a while: retry promptly
+            print(f"[ha] disconnected: {e or 'closed by Home Assistant'} — "
+                  f"retrying in {backoff:.0f}s", flush=True)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30.0) if e else 1.0
 
 
 def main():

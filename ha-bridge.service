@@ -4,6 +4,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# The HA token belongs in a root-only env file, not bridge.ini:
+#   sudo install -m 600 /dev/null /etc/ha-bridge.env
+#   echo 'HA_TOKEN=...' | sudo tee -a /etc/ha-bridge.env
+EnvironmentFile=-/etc/ha-bridge.env
 Type=simple
 User=joshc
 WorkingDirectory=/home/joshc/demoneye

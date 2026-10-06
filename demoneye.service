@@ -36,12 +36,16 @@ TTYReset=yes
 TTYVHangup=yes
 
 # MQTT broker + placement come from config.ini in WorkingDirectory.
-# (Optional: uncomment to override the config file's credentials from here.)
-#Environment=MQTT_USER=
-#Environment=MQTT_PASS=
+# Credentials: keep them OUT of config.ini. Put them in a root-only file
+#   sudo install -m 600 /dev/null /etc/demoneye.env
+#   echo 'MQTT_USER=...' | sudo tee -a /etc/demoneye.env
+# and uncomment:
+#EnvironmentFile=-/etc/demoneye.env
 
 # >>> Change --role to "brain" on ONE Pi and "follower" on the other <<<
-# Add --eye human|walker for the other eyes (use the SAME --eye on both Pis).
+# Pick what to show (the SAME on both Pis):
+#   eyes:   --eye demon | human | walker
+#   stage:  --mode stage --eye silhouette | sprite | ghost | mansion | spirits
 ExecStart=/home/joshc/demoneye/venv/bin/python /home/joshc/demoneye/demoneye.py --role follower
 Restart=on-failure
 RestartSec=3

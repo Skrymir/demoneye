@@ -29,16 +29,15 @@ import time
 #   facing -1 left, +1 right
 #   phase  walk-cycle phase 0..1 (streamed so both windows step in time)
 #   lit    window glow level 0..1
-#   crouch 0..1 posture (0 upright, 1 hunched/low)
 #   depth  0 at the window .. 1 far back in the room (3D figures)
 #   yawx/yawy  cos/sin of the facing angle (0 = facing the viewer). Streamed as
 #          a vector so the follower can lerp it without spinning at the +-180 wrap.
-STAGE_NEUTRAL = {"pos": 0.5, "facing": 1.0, "phase": 0.0, "lit": 1.0, "crouch": 0.0,
+STAGE_NEUTRAL = {"pos": 0.5, "facing": 1.0, "phase": 0.0, "lit": 1.0,
                  "depth": 0.0, "yawx": 1.0, "yawy": 0.0}
 
 # Position and phase must NOT be eased much or the figure lags and the legs
 # desync; the brain already produces smooth motion.
-STAGE_LERP = {"pos": 0.9, "facing": 0.25, "phase": 0.95, "lit": 0.25, "crouch": 0.3,
+STAGE_LERP = {"pos": 0.9, "facing": 0.25, "phase": 0.95, "lit": 0.25,
               "depth": 0.6, "yawx": 0.5, "yawy": 0.5}
 
 
@@ -55,7 +54,6 @@ class StageDirector:
         self.facing = 1.0
         self.phase = 0.0
         self.lit = 1.0
-        self.crouch = 0.0
         self.speed = speed              # stage units per second
         # Stage distance covered by ONE full walk cycle. Advancing the phase by
         # distance (not by time) keeps the feet planted at any speed — change
@@ -115,11 +113,10 @@ class StageDirector:
             self.phase += (tgt - self.phase) * min(1.0, dt * 4.0)
 
         # slow breathing-ish posture drift, and a lamp-like flicker in the glow
-        self.crouch = 0.10 + 0.06 * math.sin(self.t * 0.7)
         self.lit = 1.0 + 0.05 * math.sin(self.t * 1.9) + random.uniform(-0.02, 0.02)
 
         self.s.update(pos=self.pos, facing=self.facing, phase=self.phase,
-                      lit=self.lit, crouch=self.crouch)
+                      lit=self.lit)
         return self.s
 
 
@@ -149,10 +146,9 @@ class FollowDirector(StageDirector):
             self.pos += step
             self.facing = 1.0 if step > 0 else -1.0
             self.phase = (self.phase + abs(step) / self.stride) % 1.0
-        self.crouch = 0.10 + 0.06 * math.sin(self.t * 0.7)
         self.lit = 1.0 + 0.05 * math.sin(self.t * 1.9)
         self.s.update(pos=self.pos, facing=self.facing, phase=self.phase,
-                      lit=self.lit, crouch=self.crouch)
+                      lit=self.lit)
         return self.s
 
 
@@ -232,7 +228,7 @@ class DriftDirector:
         facing = 1.0 if math.sin(self.yaw) >= 0 else -1.0
         self.s.update(pos=self.pos, depth=self.depth,
                       yawx=math.cos(self.yaw), yawy=math.sin(self.yaw),
-                      phase=self.phase, lit=self.lit, facing=facing, crouch=0.0)
+                      phase=self.phase, lit=self.lit, facing=facing)
         return self.s
 
 
