@@ -56,7 +56,7 @@ cards:
         state_color: true
         entities:
           - entity: binary_sensor.eye_left_running
-            name: Running
+            name: Service
           - entity: binary_sensor.projector_left
             name: Projector
           - entity: sensor.eyes_left_show_state
@@ -68,7 +68,7 @@ cards:
         state_color: true
         entities:
           - entity: binary_sensor.eye_right_running
-            name: Running
+            name: Service
           - entity: binary_sensor.projector_right
             name: Projector
           - entity: sensor.eyes_right_show_state
