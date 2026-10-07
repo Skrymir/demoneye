@@ -318,7 +318,9 @@ class EyeApp:
             return
         if msg.topic == S.TARGET_TOPIC:
             if self.director is not None:
-                self.renderer.on_target(self.director, _parse_target(msg.payload))
+                t = _parse_target(msg.payload)
+                self._log_target(t, msg.payload)
+                self.renderer.on_target(self.director, t)
             return
         try:
             d = json.loads(msg.payload)
@@ -326,6 +328,23 @@ class EyeApp:
             self.last_state_at = time.time()
         except Exception:
             pass
+
+    def _log_target(self, t, payload):
+        """One log line when tracking starts and one when it ends (not one per
+        message), so `journalctl -u demoneye` shows whether targets arrived."""
+        now = time.time()
+        last = getattr(self, "_target_seen_at", 0.0)
+        if t is None:
+            if now - getattr(self, "_target_bad_at", 0.0) > 60:
+                print(f"[track] unreadable target message: {payload[:80]!r}", flush=True)
+                self._target_bad_at = now
+        elif t[0] == "set":
+            if now - last > 5.0:
+                print(f"[track] target received  x={t[1]:+.2f} y={t[2]:+.2f}", flush=True)
+            self._target_seen_at = now
+        elif last:
+            print(f"[track] target released", flush=True)
+            self._target_seen_at = 0.0
 
     def _publish(self, state):
         if self.client:
