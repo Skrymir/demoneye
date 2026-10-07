@@ -160,22 +160,9 @@ works (so an MQTT light/switch entity drives it directly).
 **Publish the command retained** so a Pi that reboots mid-event immediately
 picks up the current on/off state instead of waiting for the next automation.
 
-Example HA automations (Settings → Automations, edit in YAML):
-```yaml
-- alias: "Halloween eyes ON at dusk"
-  trigger: { platform: sun, event: sunset, offset: "-00:15:00" }
-  action:
-    - service: mqtt.publish
-      data: { topic: "halloween/eyes/command", payload: "on", retain: true }
-
-- alias: "Halloween eyes OFF at 11pm"
-  trigger: { platform: time, at: "23:00:00" }
-  action:
-    - service: mqtt.publish
-      data: { topic: "halloween/eyes/command", payload: "off", retain: true }
-```
-Prefer a switch you can also flip by hand? Add an `mqtt` switch pointing at the
-same topic and have the automations toggle that instead.
+The scheduling side (the Node-RED flow, or a dusk / 11 pm HA automation), the
+manual `switch.halloween_eyes_show`, live status for every part of the show and
+the alerts are all in [homeassistant/](../homeassistant/README.md).
 
 ---
 
@@ -189,9 +176,21 @@ quickest way to confirm a Pi is holding framerate with the heavier shaders
 ./venv/bin/python demoneye.py --role brain --solo --eye walker --stats
 ```
 ```
-fps  60.0  min  59.4  worst  18.2ms  cpu  22.0%  gpu  38.5%  52.1C  [glare]
+fps  60.0  late   0/s  p95 16.9ms  min  59.4  worst  18.2ms  cpu  22.0%  gpu  38.5%  52.1C  [glare]
 ```
 
+- **late** is the number that matches what you see: frames that missed the
+  display's refresh in the last second (the previous image stayed up twice, a
+  visible hitch). 0 is perfectly smooth. **p95** is the 95th-percentile frame
+  time; at 60 Hz it should sit near 16.7 ms.
+- The startup log says whether frames are synced to the display:
+  `[gl] screen 1280x720 @ 60 Hz, vsync on`. Synced, fps reads exactly 60 (or
+  30 if the GPU can't keep up). An in-between number like 55 means frames are
+  missing the refresh; above 60 means the loop isn't paced (the line says so).
+  Don't set `SDL_VIDEO_DOUBLE_BUFFER=1`: on the Pi 5 it locks the demon eye at
+  30 fps (measured).
+- For quick comparisons without editing config.ini: `--render-height N` and
+  `--output-mode WxH|native` override it for one run.
 - **min** is the lowest one-second average since start, and **worst** the single
   longest frame — both stick, so you can leave it running and check later
   whether anything stuttered.
@@ -204,18 +203,90 @@ fps  60.0  min  59.4  worst  18.2ms  cpu  22.0%  gpu  38.5%  52.1C  [glare]
 - `pip install psutil` gives more accurate CPU numbers; without it the value
   comes from `/proc/stat`.
 
-If FPS sags below ~55 on the Pi, the first things to trim are the walker's fire
-(the two `fbm` layers in its flame block) and the `fbm` octave counts (5 -> 4).
+The Pi sends the projector **1280x720** (`[display] output_mode`): the demon
+eye can't hold 60 fps at 1080p on a Pi 5, and on a house 720p looks the same.
+The app switches the HDMI mode itself, so nothing in `/boot` changes. The
+startup log confirms it: `[gl] screen 1280x720`. If it says it asked for 720p
+but got something else, the projector doesn't offer that mode; check
+`cat /sys/class/drm/card1-HDMI-A-1/modes`. `output_mode = native` goes back to
+the projector's preferred mode.
+
+Leave `render_height = 0` on a Pi. It draws below the output resolution and
+scales up, but on the Pi that extra pass caused dropped frames (measured at
+720p output: `0` = 0 late frames/s, `540` and `360` = 11-14 late/s). If a Pi
+can't hold 60, lower `output_mode` instead, then trim the walker's fire (the two `fbm` layers in its flame block) and the
+`fbm` octave counts (5 -> 4).
+
+Frame rate matters for sync, not just smoothness: the brain sends one state
+message per frame, so a brain at 15 fps only updates the follower 15 times a
+second.
 
 ---
 
-## If sync ever looks off
+## Eyes out of sync
 
-It shouldn't — gaze is drift-proof by design. The one timing-sensitive moment is
-the blink (~200 ms). Across a house with the projectors far apart it won't be
-noticeable, but if you ever want it frame-perfect, the upgrade is: sync both Pis'
-clocks (they already run NTP) and have the brain schedule blinks at a shared
-future timestamp instead of streaming them. Say the word and I'll add it.
+The brain streams its state 50×/s and the follower draws whatever arrived
+last, so on a healthy network the follower is only a few milliseconds behind.
+Visible lag almost always means messages are being **delayed and released in
+clumps**. Measure it first, on the follower, while the show is playing:
+
+```bash
+ssh joshc@pi-eye-right.home
+cd ~/demoneye && ./venv/bin/python sync_probe.py
+```
+
+It reports the stream spacing (steady ~20 ms is good; "bunched" or a p95 of
+50+ ms is the problem), the round trip through the broker, ping, and Wi-Fi
+power saving and signal, then names the likely cause. Fix in this order:
+
+**1. Wi-Fi power saving (most common on a Pi).** The radio naps between
+packets. Check: `iw dev wlan0 get power_save`. Turn it off for good
+(Bookworm / NetworkManager):
+
+```bash
+nmcli -t -f NAME,DEVICE connection show --active      # find the Wi-Fi connection name
+sudo nmcli connection modify "<that name>" 802-11-wireless.powersave 2
+sudo nmcli connection up "<that name>"
+iw dev wlan0 get power_save                           # → Power save: off
+```
+
+(`sudo iw dev wlan0 set power_save off` does it immediately but doesn't survive
+a reboot.) Do it on **both** Pis. `check_config.py` warns when it's on.
+
+**2. Nagle on the broker.** Mosquitto's default lets it hold a small message
+back until the previous one is acknowledged, and with 50 tiny messages a
+second that turns into 40–60 ms clumps. (Measured on a test broker: p95 spacing
+58 ms by default, 21 ms with the fix.) The eyes and the bridge already disable
+it on their own connections; the broker needs it too. With the Home Assistant
+**Mosquitto broker** add-on:
+
+1. Add-on → Configuration → **Customize**: `active: true`, `folder: mosquitto`. Save.
+2. Create `/share/mosquitto/nodelay.conf` (File editor or Samba add-on) with a
+   single line:
+   ```
+   set_tcp_nodelay true
+   ```
+3. Restart the add-on. The eyes reconnect on their own within a few seconds.
+
+**3. Weak Wi-Fi / busy channel.** Ping jitter or loss in the probe, or a signal
+below about −70 dBm. Move the access point closer, or use Ethernet (that fixes
+it outright).
+
+**4. Either Pi isn't holding frame rate.** Stop the service and run it with
+`--stats` (see above). It should hold 60 fps with `late 0`; check the log says `screen 1280x720 @ 60 Hz, vsync on` and that `render_height` is 0.
+The brain matters most: it sends one update per frame.
+
+**5. The projectors themselves.** If the probe is clean and the eyes still
+look out of step, the delay is in the projectors' image processing, which can
+differ by 50–100 ms between models or settings. Set both the same: **game /
+low-latency mode on**, motion smoothing / frame interpolation **off**, and
+the same keystone and digital-zoom settings. Keystone correction adds a frame
+or more.
+
+Blinks are the one timing-sensitive moment (~200 ms). If they still look a
+frame apart after all of the above, the upgrade is to have the brain schedule
+blinks at a shared future timestamp (both Pis already run NTP) instead of
+streaming them.
 
 ## Fallback: one Pi, two projectors
 

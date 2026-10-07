@@ -79,6 +79,12 @@ SCHEMA = {
         "center_x": (F, (0.0, 1.0)), "center_y": (F, (0.0, 1.0)),
         "scale": (F, (0.05, 5.0)), "mirror": (B, None), "mirror_gaze": (B, None),
         "gaze_scale": (F, (0.2, 4.0)), "gaze_scale_y": (F, (0.2, 4.0)),
+        "render_height": (I, (0, 2160)), "output_mode": (S, None),
+    },
+    "status": {
+        "enabled": (B, None), "node": (S, None), "base_topic": (S, None),
+        "discovery_prefix": (S, None), "refresh_s": (F, (5, 600)),
+        "projector_poll_s": (F, (0.5, 120)),
     },
 }
 # Every key ha_bridge.py reads from bridge.ini.
@@ -99,10 +105,15 @@ BRIDGE_SCHEMA = {
         "smooth_factor": (F, (0.01, 1.0)), "publish_hz": (F, (1, 60)),
         "heartbeat_s": (F, (0.1, 10)), "hold_s": (F, (0.1, 30)),
     },
+    "status": {
+        "enabled": (B, None), "node": (S, None), "base_topic": (S, None),
+        "discovery_prefix": (S, None), "refresh_s": (F, (5, 600)),
+        "last_seen_every_s": (F, (1, 600)),
+    },
 }
 BRIDGE_DEFAULTS = {"follow_command": True, "start_enabled": False, "heartbeat_s": 0.75,
                    "hold_s": 2.0, "target_topic": "halloween/eyes/target",
-                   "command_topic": "halloween/eyes/command", "host": "192.168.1.10",
+                   "command_topic": "halloween/eyes/command", "host": "192.168.86.5",
                    "port": "1883", "url": "ws://homeassistant.local:8123/api/websocket"}
 
 BOOLS = {"1", "yes", "true", "on", "0", "no", "false", "off"}
@@ -184,6 +195,10 @@ cd ~/{REMOTE_DIR} 2>/dev/null
 echo "KEYMAP $( [ -n {q(keymap)} ] && [ -f {q(keymap)} ] && echo yes || echo no )"
 echo "ATLAS $( [ -n {q(atlas)} ] && [ -f {q(atlas)} ] && echo yes || echo no )"
 echo "BROKER $(timeout 3 bash -c 'exec 3<>/dev/tcp/'{q(mhost)}'/'{q(mport)} 2>/dev/null && echo yes || echo no)"
+dev=$(ip route get {q(mhost)} 2>/dev/null | grep -o 'dev [^ ]*' | cut -d' ' -f2)
+echo "ROUTE $dev"
+case "$dev" in wl*) echo "POWERSAVE $(iw dev "$dev" get power_save 2>/dev/null | awk '{{print $NF}}')"
+  echo "SIGNAL $(iw dev "$dev" link 2>/dev/null | awk '/signal:/{{print $2}}')";; esac
 """
     if ha_url:
         u = urlparse(ha_url)
@@ -405,7 +420,7 @@ def bridge_values(rep, bcp, eye_cp, sec=None):
         rep.warn("bridge: follow_command = false — it streams targets all day, even with the "
                  "show off. Set true so the on/off command controls it")
     else:
-        rep.ok("bridge: follows the on/off command — silent (and disconnected from HA) while off")
+        rep.ok("bridge: follows the on/off command — no targets (and no HA connection) while off")
         if bg(bcp, "mqtt", "start_enabled", B):
             rep.info("bridge: start_enabled = true — it tracks from startup until the first 'off'")
 
@@ -494,6 +509,18 @@ def check_pi(host):
         rep.ok(f"broker {mh}:{g(cp, 'mqtt', 'port', S, '1883')} reachable from this Pi")
     else:
         rep.err(f"broker {mh}:{g(cp, 'mqtt', 'port', S, '1883')} NOT reachable from this Pi")
+    dev = rc.get("ROUTE", "")
+    if dev.startswith("wl"):
+        ps, sig = rc.get("POWERSAVE", ""), rc.get("SIGNAL", "")
+        if ps == "on":
+            rep.warn(f"Wi-Fi power saving is ON ({dev}) — adds tens to hundreds of ms to the eye sync. "
+                     "See docs/OPERATIONS.md 'Eyes out of sync'")
+        elif ps == "off":
+            rep.ok(f"broker reached over Wi-Fi ({dev}), power saving off")
+        if sig.lstrip("-").isdigit() and int(sig) < -70:
+            rep.warn(f"weak Wi-Fi signal to the broker ({sig} dBm) — retries delay the sync")
+    elif dev:
+        rep.ok(f"broker reached over {dev} (wired)")
 
     if svc["bridge"]["runs"]:
         url = bg(bcp, "home_assistant", "url")
@@ -538,6 +565,35 @@ def check_bridge_pair(rep, pis):
                  "(fine if you run it on another machine)")
 
 
+def status_node(cp, host):
+    """The node name an eye publishes its HA status under (ha_status.resolve_node)."""
+    node = (g(cp, "status", "node") or "auto").strip().lower()
+    if node == "auto":
+        h = host.split(".")[0].lower()
+        node = next((side for side in ("left", "right") if side in h), h)
+    return re.sub(r"[^a-z0-9_]+", "_", node).strip("_") or "eye"
+
+
+def check_status_pair(rep, live, file_mode=False):
+    """Home Assistant status: both eyes on, under different node names."""
+    off = [h for h, cp, _ in live if g(cp, "status", "enabled", B, True) is False]
+    if off:
+        rep.warn(f"[status] enabled = false on {', '.join(off)} — that eye won't show up in "
+                 "Home Assistant")
+    bases = {h: g(cp, "status", "base_topic") or "halloween/eyes/status" for h, cp, _ in live}
+    if len(set(bases.values())) > 1:
+        rep.warn("[status] base_topic differs: " + ", ".join(f"{h}={v}" for h, v in bases.items()))
+    if file_mode:
+        return
+    nodes = {h: status_node(cp, h) for h, cp, _ in live}
+    if len(set(nodes.values())) < len(nodes):
+        rep.err("both Pis publish Home Assistant status as "
+                f"'{next(iter(nodes.values()))}' — they'd overwrite each other. Set "
+                "[status] node = left / right in each config.ini")
+    else:
+        rep.ok("HA status nodes: " + ", ".join(f"{h} -> {n}" for h, n in nodes.items()))
+
+
 def check_pair(pis):
     rep = Report("the pair")
     check_bridge_pair(rep, pis)
@@ -570,6 +626,8 @@ def check_pair(pis):
                     + " — they won't hear each other")
     if all(len({g(cp, 'mqtt', k) for _, cp, _ in live}) == 1 for k in ("host", "port", "topic")):
         rep.ok("same broker and topics")
+
+    check_status_pair(rep, live, file_mode=all(svc is None for _, _, svc in live))
 
     mirrors = [h for h, cp, _ in live if g(cp, "display", "mirror", B, False)]
     if len(mirrors) > 1:

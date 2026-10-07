@@ -12,14 +12,14 @@ import configparser
 import os
 
 # --- MQTT (defaults; real values live in config.ini [mqtt]) ---
-MQTT_HOST = "192.168.1.10"          # your broker (Home Assistant / Mosquitto)
+MQTT_HOST = "192.168.86.5"          # your broker (Home Assistant / Mosquitto)
 MQTT_PORT = 1883
 MQTT_USER = ""
 MQTT_PASS = ""
 TOPIC = "halloween/eyes/state"
 COMMAND_TOPIC = "halloween/eyes/command"   # Home Assistant publishes on/off here
 TARGET_TOPIC = "halloween/eyes/target"     # a sensor bridge publishes look-here targets
-PUBLISH_HZ = 50                     # how often the brain streams state
+PUBLISH_HZ = 60                     # brain streams state once per frame at 60 fps
 
 # --- Playback control ---
 # "playing" renders as soon as the app starts; "idle" shows black and waits for
@@ -40,6 +40,16 @@ DISPLAY_RETRY_S = 5.0
 
 # --- Projector IR control (optional; config.ini [projector]) ---
 IR_ENABLED = False
+
+# --- Home Assistant status over MQTT discovery (config.ini [status]) ---
+# Each eye publishes retained, low-rate status (running / projector / show
+# state) plus discovery configs, so its entities appear in HA by themselves.
+STATUS_ENABLED = True
+STATUS_NODE = "auto"                 # auto = left/right from the hostname
+STATUS_BASE_TOPIC = "halloween/eyes/status"
+STATUS_DISCOVERY_PREFIX = "homeassistant"
+STATUS_REFRESH_S = 30.0              # republish even when nothing changed
+STATUS_PROJECTOR_POLL_S = 5.0        # how often to read the HDMI (projector) state
 
 # --- Stage mode (--mode stage; config.ini [stage]) ---
 # The projectors become viewports onto ONE virtual stage wider than any window.
@@ -81,6 +91,14 @@ MIRROR = False          # flip this eye (glint side) for a symmetric pair; ONE P
 MIRROR_GAZE = False     # also flip gaze direction (cross-eyed pair). Leave False.
 GAZE_SCALE_X = 1.0      # how far the gaze travels; 1.6-2.2 reads well on a house
 GAZE_SCALE_Y = 1.0
+# HDMI mode the Pi sends to the projector, e.g. "1280x720". The demon shader is
+# heavy: at 1080p a Pi 5 can't hold 60 fps, at 720p it can, and on a house it
+# looks the same (the projector does the scaling). "native" = whatever the
+# projector prefers. Set in the app, so no boot-config changes are needed.
+OUTPUT_MODE = "1280x720"
+# Optional extra: draw below the output resolution and scale up on the GPU.
+# 0 = draw at the output resolution (normal with a 720p output_mode).
+RENDER_HEIGHT = 0
 
 # --- Display ---
 FULLSCREEN = True
@@ -107,7 +125,8 @@ def load_config(path):
         "display": {"center_x": str(EYE_CENTER_X), "center_y": str(EYE_CENTER_Y),
                     "scale": str(EYE_SCALE), "mirror": str(MIRROR),
                     "mirror_gaze": str(MIRROR_GAZE),
-                    "gaze_scale": str(GAZE_SCALE_X), "gaze_scale_y": str(GAZE_SCALE_Y)},
+                    "gaze_scale": str(GAZE_SCALE_X), "gaze_scale_y": str(GAZE_SCALE_Y),
+                    "render_height": str(RENDER_HEIGHT), "output_mode": OUTPUT_MODE},
         "stage": {"stage_from": str(STAGE_FROM), "stage_to": str(STAGE_TO),
                   "figure_scale": str(FIG_SCALE), "speed": str(STAGE_SPEED),
                   "freeze_when_watched": str(STAGE_FREEZE_WHEN_WATCHED),
@@ -118,6 +137,11 @@ def load_config(path):
                     "stale_after_s": str(STALE_AFTER_S),
                     "display_retry_s": str(DISPLAY_RETRY_S)},
         "projector": dict(_PROJECTOR_DEFAULTS, ir_enabled=str(IR_ENABLED)),
+        "status": {"enabled": str(STATUS_ENABLED), "node": STATUS_NODE,
+                   "base_topic": STATUS_BASE_TOPIC,
+                   "discovery_prefix": STATUS_DISCOVERY_PREFIX,
+                   "refresh_s": str(STATUS_REFRESH_S),
+                   "projector_poll_s": str(STATUS_PROJECTOR_POLL_S)},
     })
     if path and os.path.exists(path):
         cp.read(path)
@@ -154,6 +178,13 @@ def load_config(path):
 
     g["IR_ENABLED"] = cp.getboolean("projector", "ir_enabled")
 
+    g["STATUS_ENABLED"] = cp.getboolean("status", "enabled")
+    g["STATUS_NODE"] = cp.get("status", "node").strip() or "auto"
+    g["STATUS_BASE_TOPIC"] = cp.get("status", "base_topic").strip().rstrip("/")
+    g["STATUS_DISCOVERY_PREFIX"] = cp.get("status", "discovery_prefix").strip().rstrip("/")
+    g["STATUS_REFRESH_S"] = cp.getfloat("status", "refresh_s")
+    g["STATUS_PROJECTOR_POLL_S"] = cp.getfloat("status", "projector_poll_s")
+
     g["EYE_CENTER_X"] = cp.getfloat("display", "center_x")
     g["EYE_CENTER_Y"] = cp.getfloat("display", "center_y")
     g["EYE_SCALE"] = cp.getfloat("display", "scale")
@@ -161,4 +192,6 @@ def load_config(path):
     g["MIRROR_GAZE"] = cp.getboolean("display", "mirror_gaze")
     g["GAZE_SCALE_X"] = cp.getfloat("display", "gaze_scale")
     g["GAZE_SCALE_Y"] = cp.getfloat("display", "gaze_scale_y")
+    g["RENDER_HEIGHT"] = cp.getint("display", "render_height")
+    g["OUTPUT_MODE"] = cp.get("display", "output_mode").strip()
     return cp

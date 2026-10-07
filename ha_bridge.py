@@ -15,8 +15,13 @@ This runs anywhere that can reach both Home Assistant and your MQTT broker — t
 brain Pi is a fine home for it. Run it on ONE machine only.
 
 On/off: with follow_command = true (the default) it obeys the same command topic
-as the eyes. While the show is off it publishes nothing to MQTT and doesn't even
+as the eyes. While the show is off it publishes no targets and doesn't even
 hold a connection to Home Assistant; "on" connects, seeds and starts tracking.
+
+Status: it also publishes its own low-rate, retained status for Home Assistant
+(running, tracking, last target seen, host, HA link) via MQTT discovery — see
+ha_status.py and bridge.ini [status]. That keeps going while the show is off,
+so HA can tell "off" from "dead".
 """
 
 import asyncio
@@ -24,11 +29,15 @@ import configparser
 import json
 import math
 import os
+import signal
+import socket
 import sys
 import time
 
 import websockets
 import paho.mqtt.client as mqtt
+
+import ha_status
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +69,7 @@ class Config:
                 "y_pattern": "sensor.s1_pro_multi_sense_ae8394_target_{n}_y",
                 "active_pattern": "",
             },
-            "mqtt": {"host": "192.168.1.10", "port": "1883", "username": "", "password": "",
+            "mqtt": {"host": "192.168.86.5", "port": "1883", "username": "", "password": "",
                      "target_topic": "halloween/eyes/target",
                      "command_topic": "halloween/eyes/command",
                      "follow_command": "true", "start_enabled": "false"},
@@ -70,6 +79,8 @@ class Config:
                 "smooth_factor": "0.6", "publish_hz": "20", "heartbeat_s": "0.75",
                 "hold_s": "2.0",
             },
+            "status": dict(ha_status.STATUS_DEFAULTS, node="bridge", refresh_s="60",
+                           last_seen_every_s="10"),
         })
         if path and os.path.exists(path):
             cp.read(path)
@@ -116,12 +127,33 @@ class Config:
         self.heartbeat = cp.getfloat("calibration", "heartbeat_s")
         self.hold = cp.getfloat("calibration", "hold_s")
 
+        st = ha_status.load_section(cp, "status")
+        self.status_enabled = st["enabled"]
+        self.status_node = ha_status.resolve_node(st["node"])
+        self.status_base = st["base_topic"]
+        self.status_prefix = st["discovery_prefix"]
+        self.status_refresh = st["refresh_s"]
+        self.last_seen_every = cp.getfloat("status", "last_seen_every_s")
+
 
 def _clamp(v, lo=-1.0, hi=1.0):
     return lo if v < lo else hi if v > hi else v
 
 
 # ---------------------------------------------------------------------------
+def set_nodelay(client):
+    """No Nagle on the MQTT socket (paho leaves it on): small messages go out
+    immediately instead of being held for the previous one's ACK."""
+    try:
+        sock = client.socket()
+        if sock is not None:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            return True
+    except (OSError, AttributeError):
+        pass
+    return False
+
+
 class Bridge:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -138,6 +170,10 @@ class Bridge:
         self._loop = None        # asyncio loop, so the MQTT thread can wake it
         self._on_evt = None
         self._off_evt = None
+        self.ha_connected = False  # Home Assistant WebSocket authenticated and up
+        self.status = None       # ha_status.StatusPublisher once MQTT is set up
+        self._seen_pub = None    # monotonic time last_seen was last published
+        self._host = ha_status.hostname()
 
     def _sync_events(self):
         """Mirror self.enabled into the asyncio events (runs on the loop)."""
@@ -204,6 +240,7 @@ class Bridge:
         if not want and self.have:
             self.have = False          # release any held target as we go quiet
             self._publish_clear()
+            self._mark_seen(force=True)
         if self._loop is not None:     # paho thread -> wake the HA connection loop
             self._loop.call_soon_threadsafe(self._sync_events)
 
@@ -213,14 +250,61 @@ class Bridge:
             self.client.username_pw_set(self.cfg.mqtt_user, self.cfg.mqtt_pass)
         if self.cfg.follow_command:
             self.client.message_callback_add(self.cfg.command_topic, self._on_command)
+        self._setup_status()              # sets the last will, so before connect()
 
-            def _on_connect(c, u, flags, rc, props):
+        def _on_connect(c, u, flags, rc, props):
+            set_nodelay(c)                # send each small target message immediately
+            if self.cfg.follow_command:
                 c.subscribe(self.cfg.command_topic, qos=1)
                 print(f"[bridge] following {self.cfg.command_topic} "
                       f"(currently {'enabled' if self.enabled else 'disabled'})", flush=True)
-            self.client.on_connect = _on_connect
+            if self.status:
+                self.status.on_connect()
+        self.client.on_connect = _on_connect
         self.client.connect(self.cfg.mqtt_host, self.cfg.mqtt_port, keepalive=30)
         self.client.loop_start()
+        if self.status:
+            self.status.start()
+
+    # -- Home Assistant status (MQTT discovery; see ha_status.py) --
+    def _setup_status(self):
+        if not self.cfg.status_enabled:
+            return
+        c = self.cfg
+        self.status = ha_status.StatusPublisher(
+            self.client, c.status_node,
+            ha_status.bridge_discovery(c.status_node, c.status_base, c.status_prefix),
+            self.status_snapshot, base=c.status_base, prefix=c.status_prefix,
+            refresh_s=c.status_refresh)
+        print(f"[status] Home Assistant status on {c.status_base}/{c.status_node}/", flush=True)
+
+    def status_snapshot(self):
+        return {"tracking": bool(self.enabled and self.have), "enabled": bool(self.enabled),
+                "ha_connected": bool(self.ha_connected), "host": self._host,
+                "version": ha_status.VERSION}
+
+    def _mark_seen(self, force=False):
+        """Publish 'last target seen' on acquisition / loss, and at most every
+        last_seen_every_s while a target is held. Retained and never cleared,
+        so it survives the show going off and the bridge restarting."""
+        if not self.status:
+            return
+        now = time.monotonic()
+        if force or self._seen_pub is None or now - self._seen_pub >= self.cfg.last_seen_every:
+            self.status.publish_last_seen()
+            self._seen_pub = now
+
+    def close(self):
+        """Clean exit: mark the bridge offline now instead of via the last will."""
+        if self.client is None:
+            return
+        if self.status:
+            self.status.go_offline()
+        try:
+            self.client.loop_stop()
+            self.client.disconnect()
+        except Exception:
+            pass
 
     def _publish_target(self, gx, gy):
         payload = json.dumps({"x": round(gx, 4), "y": round(gy, 4), "hold": self.cfg.hold})
@@ -239,14 +323,17 @@ class Bridge:
             if self.have:                       # just lost the target
                 self.have = False
                 self._publish_clear()
+                self._mark_seen(force=True)     # the last moment someone was there
                 print("[tgt] cleared", flush=True)
             return
         gx, gy = self.normalize(*target)
         if not self.have:                        # fresh acquisition: snap (no smoothing)
             self.sx, self.sy = gx, gy
             self.have = True
+            self._mark_seen(force=True)
             print(f"[tgt] acquired  x={gx:+.2f} y={gy:+.2f}", flush=True)
         else:
+            self._mark_seen()
             a = self.cfg.smooth
             self.sx += (gx - self.sx) * a
             self.sy += (gy - self.sy) * a
@@ -256,6 +343,12 @@ class Bridge:
 
     # -- Home Assistant WebSocket --
     async def _session(self):
+        try:
+            await self._ha_session()
+        finally:
+            self.ha_connected = False
+
+    async def _ha_session(self):
         async with websockets.connect(self.cfg.url, max_size=8 * 1024 * 1024,
                                       ping_interval=20) as ws:
             # auth handshake
@@ -267,6 +360,7 @@ class Bridge:
             if ack.get("type") != "auth_ok":
                 raise RuntimeError(f"auth failed: {ack}")
             print("[ha] authenticated", flush=True)
+            self.ha_connected = True
 
             # seed current states
             await ws.send(json.dumps({"id": 1, "type": "get_states"}))
@@ -338,16 +432,24 @@ class Bridge:
             backoff = min(backoff * 2, 30.0) if e else 1.0
 
 
+def _sigterm(*_):
+    raise KeyboardInterrupt      # systemctl stop -> same clean path as Ctrl-C
+
+
 def main():
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge.ini")
     cfg = Config(sys.argv[1] if len(sys.argv) > 1 else cfg_path)
     if not cfg.token:
         print("No HA token. Set it in bridge.ini or the HA_TOKEN env var.", file=sys.stderr)
         sys.exit(1)
+    signal.signal(signal.SIGTERM, _sigterm)
+    bridge = Bridge(cfg)
     try:
-        asyncio.run(Bridge(cfg).run())
+        asyncio.run(bridge.run())
     except KeyboardInterrupt:
         pass
+    finally:
+        bridge.close()
 
 
 if __name__ == "__main__":

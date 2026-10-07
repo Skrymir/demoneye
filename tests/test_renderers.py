@@ -58,3 +58,31 @@ def test_unknown_figure_is_a_clear_error():
         make_renderer("eyes", "dragon")
     with pytest.raises(ValueError):
         make_renderer("stage", "vampire")
+
+
+def test_reduced_resolution_render_target(gl):
+    """render_height: draw offscreen at a lower height, blit up to the screen."""
+    import demoneye as D
+    from glutil import build_program, make_fullscreen_triangle
+    saved = S.RENDER_HEIGHT
+    try:
+        S.RENDER_HEIGHT = 90
+        r = make_renderer("eyes", "demon")
+        app = D.EyeApp.__new__(D.EyeApp)
+        app.active, app.stale, app.renderer, app.schema = True, False, r, r.schema
+        app.prog = build_program(r.frag, True, r.defines)
+        app.vao = make_fullscreen_triangle()
+        gl.glUseProgram(app.prog); r.bind(app.prog)
+        app.W, app.H, app.t = 320, 180, 1.0
+        app.out_W, app.out_H = 320, 180
+        app.disp = dict(r.schema)
+        app._setup_render_target()
+        assert app.fbo and (app.W, app.H) == (160, 90)
+        app._draw()
+        assert gl.glGetError() == gl.GL_NO_ERROR
+        S.RENDER_HEIGHT = 0                       # native: no offscreen target
+        app.W, app.H = 320, 180
+        app._setup_render_target()
+        assert app.fbo is None and (app.W, app.H) == (320, 180)
+    finally:
+        S.RENDER_HEIGHT = saved

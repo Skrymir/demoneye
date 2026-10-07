@@ -9,13 +9,14 @@
 | `eye_shaders.py` `stage_shaders.py` `glsl_common.py` `glutil.py` | both Pis | the shaders |
 | `stats.py` | both Pis | `--stats` readout |
 | `ir_control.py` | Pis with an IR transmitter | projector power via `ir-ctl` |
+| `ha_status.py` | both Pis | status for Home Assistant (eyes and bridge) |
 | `config.ini` | both Pis | **per-Pi** settings — differs between them |
 | `requirements.txt` | both Pis | python deps |
 | `demoneye.service` | both Pis | autostart on boot |
 | `figures/` | both Pis (if using sprites) | sprite atlases |
 | `ha_bridge.py` `bridge.ini` `requirements-bridge.txt` `ha-bridge.service` | ONE machine only | mmWave tracking bridge |
 | `sprite_atlas.py` `track_test.py` `tests/` | anywhere | tools + tests |
-| `nodered_flow.json` | Home Assistant | Node-RED MQTT output nodes |
+| `homeassistant/` | Home Assistant (not the Pis) | dashboard card, automations, Node-RED flow; see its README |
 
 The simplest deployment is `git pull` on each Pi — every file above is in the
 repo except each Pi's own `config.ini` values (see `.gitignore`).

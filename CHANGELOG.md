@@ -1,5 +1,78 @@
 # Changelog
 
+## Eye sync latency — 2026-10-06
+
+- **Frame pacing, measured on the Pi 5 (720p demon eye, 60 Hz):** frames
+  capped just above the refresh rate = 66 fps, 0 late frames (kept as the
+  default). Double-buffering (`SDL_VIDEO_DOUBLE_BUFFER=1`) = locked 30 fps.
+  Sleeping to exactly 60 = 17 fps (it fights the driver's own page-flip wait).
+  `--pacing cap|exact|off` for comparing.
+- **Measured on the brain (720p output, vsync on):** `render_height` 0 = 66 fps,
+  0 late frames; 540 = 50 fps, 14 late/s; 360 = 66 fps, 11 late/s. The extra
+  scaling pass costs more than it saves on the Pi, so leave `render_height = 0`
+  (the default). New `--render-height` / `--output-mode` flags for testing.
+- **Vsync on; frame pacing fixed.** The display was opened without vsync and
+  the loop capped itself with sleeps that weren't aligned to the projector's
+  refresh, so frames landed out of step (some shown twice, some never): judder
+  even at 55 fps. Now each flip waits for the refresh, and the cap is only a
+  safety net. The log shows `@ 60 Hz, vsync on`.
+- **`--stats` is honest about smoothness.** New `late` (frames that missed a
+  refresh, per second) and `p95` frame time. The `vcgencmd` GPU-clock read
+  moved off the render thread; it was causing a 20-60 ms hitch every second
+  in --stats mode (the "worst 68 ms").
+- **Demon eye renders ~2x faster, same picture.** Its iris texture (2x
+  voronoi + fbm) was computed for every pixel on screen and then multiplied by
+  zero outside the lids; it's now only computed inside them. Pixel-identical
+  output (verified), about 1.8x faster. The brain was measured at 15 fps.
+- **Pi outputs 1280x720 (`[display] output_mode`).** The app asks the Pi for a
+  real 720p HDMI mode instead of the projector's native 1080p: ~2.25x fewer
+  pixels for the shader, and the projector does the scaling. No `/boot`
+  changes, and HDMI hot-plug (the IR power check) still works. `native` = old
+  behaviour. Optional `render_height` draws below the output and scales up on
+  the GPU. The log shows the screen size and render size.
+- Removed the "waiting for display" tip that suggested forcing the HDMI mode
+  (that breaks the IR power verification).
+- **Brain now streams 60 msg/s, not 30.** It published when 20 ms (50 Hz) had
+  passed, but 60 fps frames are 16.7 ms apart, so the check only passed every
+  other frame: 30 msg/s. It now publishes on a frame count (every frame at
+  60 fps), giving the follower twice the updates. `PUBLISH_HZ` default is 60.
+- **Nagle off on MQTT sockets.** paho leaves Nagle's algorithm on, which can
+  hold small 50 Hz state messages back and release them in clumps. The eyes
+  and the bridge now set `TCP_NODELAY` on every (re)connect. The broker needs
+  `set_tcp_nodelay true` too: on a test broker that took p95 message spacing
+  from 58 ms to 21 ms.
+- New `sync_probe.py`, run on a Pi during the show: measures the state stream's
+  spacing and bunching, MQTT round trip, ping and Wi-Fi power save/signal, and
+  names the likely cause.
+- `check_config.py` warns when the broker is reached over Wi-Fi with power
+  saving on, or with a weak signal.
+- docs/OPERATIONS.md: "Eyes out of sync" troubleshooting (Wi-Fi power save,
+  Mosquitto add-on `set_tcp_nodelay`, projector game mode/keystone).
+
+## Show status in Home Assistant — 2026-10-06
+
+- **New `ha_status.py`: live status over MQTT discovery.** Both eyes and the
+  tracking bridge publish retained, low-rate status plus HA discovery configs,
+  so three devices appear in Home Assistant with nothing to install: per eye
+  *Running* (MQTT last will), *Projector* (HDMI state), *Show*
+  (`playing` / `idle` / `waiting_for_display` / `lost_brain`) and *Role*
+  (with mode, eye, version, host). The bridge reports *Running*, *Tracking*,
+  *Last target seen* (timestamp, survives restarts), *Host* and its *Home
+  Assistant link*. The brain also publishes a *Show* switch on the command
+  topic for manual on/off. Published on change plus a 30/60 s refresh, never
+  at frame rate; resent when HA restarts. Clean stops publish `offline` at
+  once; the bridge now handles SIGTERM cleanly too.
+- New optional `[status]` section in `config.ini` and `bridge.ini` (all keys
+  default sensibly, so existing Pi configs need no change). `check_config.py`
+  knows the keys and errors if both Pis would publish under the same node name.
+- New top-level `homeassistant/` folder for everything on the HA side: its
+  README (status entities, setup, topics), a paste-in dashboard card, four
+  alert automations, the dusk / 11 pm schedule (moved out of
+  `docs/OPERATIONS.md`) and `nodered_flow.json` (moved from the top level).
+  `deploy.sh` doesn't copy it to the Pis. 31 new tests (`tests/test_status.py`),
+  and verified end to end against a real Mosquitto broker: discovery, state
+  changes, clean stop, and the last will after a `kill -9`.
+
 ## Tracking bridge on/off and checks — 2026-10-06
 
 - **Bridge goes fully quiet when the show is off.** It already published

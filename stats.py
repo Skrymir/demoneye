@@ -23,8 +23,14 @@ import time
 
 
 class Stats:
-    def __init__(self, interval=1.0):
+    def __init__(self, interval=1.0, refresh_hz=None):
         self.interval = interval
+        # A frame that takes longer than ~1.5 refresh periods missed a refresh:
+        # the previous image stayed on screen twice (a visible hitch).
+        self.refresh_hz = refresh_hz or 60.0
+        self._late_ms = 1500.0 / self.refresh_hz
+        self.late = 0
+        self._ms = []
         self.frames = 0
         self.t0 = time.monotonic()
         self.last = self.t0
@@ -63,6 +69,18 @@ class Stats:
             except Exception:
                 pass
         self._prev_v3d = self._read_v3d()
+
+        # vcgencmd is a subprocess (10-50 ms): run it off the render thread, or
+        # --stats itself causes a hitch every second.
+        self._clk = None
+        if self.gpu_src == "vcgencmd":
+            import threading
+
+            def _poll():
+                while True:
+                    self._clk = self.gpu_clock_mhz()
+                    time.sleep(self.interval)
+            threading.Thread(target=_poll, daemon=True).start()
 
     # -- CPU --
     @staticmethod
@@ -155,8 +173,12 @@ class Stats:
         now = time.monotonic()
         ms = (now - self._frame_mark) * 1000.0
         self._frame_mark = now
-        if ms > self.worst_frame_ms and self.frames > 5:
-            self.worst_frame_ms = ms
+        if self.frames > 5 or self.fps:
+            if ms > self.worst_frame_ms:
+                self.worst_frame_ms = ms
+            if ms > self._late_ms:
+                self.late += 1
+            self._ms.append(ms)
         self.frames += 1
         if now - self.last < self.interval:
             return None
@@ -164,15 +186,20 @@ class Stats:
         self.fps = self.frames / (now - self.last)
         if self.fps_min is None or self.fps < self.fps_min:
             self.fps_min = self.fps
+        late, self.late = self.late, 0
+        ms_sorted, self._ms = sorted(self._ms), []
+        p95 = ms_sorted[int(0.95 * (len(ms_sorted) - 1))] if ms_sorted else 0.0
         self.frames = 0
         self.last = now
 
         cpu = self.cpu_percent()
         gpu = self.gpu_percent()
-        clk = self.gpu_clock_mhz()
+        clk = self._clk                       # sampled on a background thread
         tmp = self.temp_c()
 
-        parts = [f"fps {self.fps:5.1f}"]
+        parts = [f"fps {self.fps:5.1f}", f"late {late:3d}/s", f"p95 {p95:4.1f}ms"]
+        if self.fps > self.refresh_hz * 1.05:
+            parts.append(f"(above {self.refresh_hz:.0f} Hz: vsync isn't waiting)")
         parts.append(f"min {self.fps_min:5.1f}" if self.fps_min else "min   n/a")
         parts.append(f"worst {self.worst_frame_ms:5.1f}ms")
         parts.append(f"cpu {cpu:5.1f}%" if cpu is not None else "cpu   n/a")
@@ -190,9 +217,8 @@ class Stats:
         src = {"v3d": "/sys debugfs gpu_usage",
                "vcgencmd": "vcgencmd v3d clock (proxy)"}.get(self.gpu_src)
         cpu_src = "psutil" if self._psutil else ("/proc/stat" if self._prev_cpu else "unavailable")
-        return (f"[stats] cpu via {cpu_src}; gpu via {src or 'no source found (shown as n/a)'}"
-                + ("" if self.gpu_src != "v3d"
-                   else ""))
+        return (f"[stats] cpu via {cpu_src}; gpu via {src or 'no source found (shown as n/a)'}; "
+                f"'late' = frames over {self._late_ms:.0f} ms (missed a {self.refresh_hz:.0f} Hz refresh)")
 
 
 if __name__ == "__main__":

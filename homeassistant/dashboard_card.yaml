@@ -1,0 +1,97 @@
+# Halloween Eyes: show status card. Built-in cards only, nothing to install.
+#
+# Add it: open a dashboard -> pencil (Edit) -> + Add card -> Manual,
+# then paste this whole file in.
+#
+# The entities come from MQTT discovery (ha_status.py). If HA gave any of them a
+# different entity_id (for example "_2" because an older entity had the name),
+# fix the id here or rename the entity under Settings -> Entities.
+
+type: vertical-stack
+cards:
+  # One-line health summary: what's wrong right now, or "all good".
+  - type: markdown
+    content: |
+      {% set show = is_state('switch.halloween_eyes_show', 'on') %}
+      {% set ns = namespace(p=[]) %}
+      {% for side in ['left', 'right'] %}
+        {% set name = side | capitalize ~ ' eye' %}
+        {% if not is_state('binary_sensor.eye_' ~ side ~ '_running', 'on') %}
+          {% set ns.p = ns.p + [name ~ ': not running'] %}
+        {% elif show and is_state('binary_sensor.projector_' ~ side, 'off') %}
+          {% set ns.p = ns.p + [name ~ ': projector is off'] %}
+        {% elif show and not is_state('sensor.eyes_' ~ side ~ '_show_state', 'playing') %}
+          {% set ns.p = ns.p + [name ~ ': ' ~ states('sensor.eyes_' ~ side ~ '_show_state') | replace('_', ' ')] %}
+        {% endif %}
+      {% endfor %}
+      {% if show and not is_state('binary_sensor.eye_bridge_running', 'on') %}
+        {% set ns.p = ns.p + ['Tracking bridge: not running'] %}
+      {% endif %}
+      {% if ns.p %}
+      ### ⚠️ Needs a look
+      {% for item in ns.p %}
+      - {{ item }}
+      {% endfor %}
+      {% else %}
+      ### {{ '🎃 Show is on, all good' if show else '🌙 Show is off, everything is standing by' }}
+      {% endif %}
+
+  - type: entities
+    title: Halloween Eyes
+    state_color: true
+    entities:
+      - entity: switch.halloween_eyes_show
+        name: Show (manual on/off)
+      - type: attribute
+        entity: sensor.eyes_left_role
+        attribute: mode
+        name: Mode
+      - type: attribute
+        entity: sensor.eyes_left_role
+        attribute: eye
+        name: Figure
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: entities
+        title: Left
+        state_color: true
+        entities:
+          - entity: binary_sensor.eye_left_running
+            name: Running
+          - entity: binary_sensor.projector_left
+            name: Projector
+          - entity: sensor.eyes_left_show_state
+            name: Show
+          - entity: sensor.eyes_left_role
+            name: Role
+      - type: entities
+        title: Right
+        state_color: true
+        entities:
+          - entity: binary_sensor.eye_right_running
+            name: Running
+          - entity: binary_sensor.projector_right
+            name: Projector
+          - entity: sensor.eyes_right_show_state
+            name: Show
+          - entity: sensor.eyes_right_role
+            name: Role
+
+  - type: entities
+    title: Tracking
+    state_color: true
+    entities:
+      - entity: binary_sensor.eye_bridge_running
+        name: Bridge running
+      - entity: binary_sensor.tracking_active
+        name: Someone tracked now
+      - entity: sensor.last_target_seen
+        name: Last person seen
+        format: relative
+      - entity: sensor.bridge_host
+        name: Bridge runs on
+      - entity: binary_sensor.eye_bridge_ha_connected
+        name: Sensor link (off while the show is off)

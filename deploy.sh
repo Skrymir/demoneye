@@ -49,7 +49,7 @@ cd "$HERE"
 # make the Pis match it, removing newer files there.
 missing=()
 for f in demoneye.py settings.py renderers.py directors.py stage.py glsl_common.py \
-         glutil.py eye_shaders.py stage_shaders.py ir_control.py requirements.txt tests; do
+         glutil.py eye_shaders.py stage_shaders.py ir_control.py ha_status.py requirements.txt tests; do
   [ -e "$f" ] || missing+=("$f")
 done
 if [ ${#missing[@]} -gt 0 ]; then
@@ -78,6 +78,7 @@ EXCLUDES=(
   --exclude '.git/' --exclude '__pycache__/' --exclude '.pytest_cache/'
   --exclude '*.pyc' --exclude '.DS_Store' --exclude '*.zip' --exclude '*.log'
   --exclude 'frames/' --exclude 'frames_*/'
+  --exclude 'homeassistant/'
 )
 
 FAILED=()

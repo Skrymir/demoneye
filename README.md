@@ -45,7 +45,8 @@ makes them react to being watched.
 - **[docs/EYES.md](docs/EYES.md)** — the eye types, tuning their look, mirroring a pair
 - **[docs/STAGE.md](docs/STAGE.md)** — stage mode, window spans, the figure types, sprite atlases
 - **[docs/TRACKING.md](docs/TRACKING.md)** — the mmWave bridge, calibration, `track_test.py`, projector IR
-- **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — Home Assistant / Node-RED control, `--stats`, troubleshooting
+- **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — running on the projectors, on/off behaviour, `--stats`, troubleshooting
+- **[homeassistant/](homeassistant/README.md)** — everything on the Home Assistant side: live show status, the dashboard card, alerts, the on/off schedule (HA or Node-RED)
 
 ## Layout
 
@@ -60,9 +61,11 @@ stage_shaders.py shader bodies for the stage figures
 glsl_common.py   the shared GLSL prelude + assembler (injects #defines)
 glutil.py        compile/link, fullscreen triangle, texture upload
 ha_bridge.py     Home Assistant -> MQTT target bridge      (bridge.ini)
+ha_status.py     show status for Home Assistant (MQTT discovery), used by both
 ir_control.py    projector power over IR via ir-ctl
 stats.py         --stats readout        sprite_atlas.py  pack PNG frames
 track_test.py    simulate targets       tests/           pytest suite
+homeassistant/   HA dashboard card, automations, Node-RED flow (not deployed to the Pis)
 ```
 
 Adding a figure is one Renderer class and one shader body; the app never

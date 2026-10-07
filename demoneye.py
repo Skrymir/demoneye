@@ -19,6 +19,7 @@ import json
 import os
 import random
 import signal
+import socket
 import sys
 import time
 
@@ -26,6 +27,11 @@ import time
 if sys.platform.startswith("linux"):
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
     os.environ.setdefault("SDL_VIDEO_X11_FORCE_EGL", "1")
+    # Leave SDL's KMSDRM driver triple-buffered (its default). Measured on the
+    # Pi 5 at 720p: SDL_VIDEO_DOUBLE_BUFFER=1 serialises wait-for-flip, CPU and
+    # GPU, so a frame just overran 16.7 ms and locked at 30 fps. Triple-buffered,
+    # CPU and GPU overlap and it sustains 66; the loop is paced to the refresh
+    # rate below so it renders 60, one per refresh, nothing thrown away.
 
 import pygame
 from OpenGL import GL
@@ -45,17 +51,63 @@ try:
 except ImportError:
     stats_mod = None
 
+try:
+    import ha_status
+except ImportError:
+    ha_status = None
+
 import settings as S
 from directors import _parse_command, _parse_target
 from glutil import build_program, make_fullscreen_triangle
 from renderers import make_renderer, EYE_FIGURES, STAGE_FIGURES
 
 
+
+def output_size(mode):
+    """config output_mode -> (w, h) for set_mode. "1280x720" -> (1280, 720);
+    "native", "auto", "" or anything unparseable -> (0, 0) = the projector's
+    preferred mode. SDL's KMSDRM driver switches the real HDMI mode."""
+    try:
+        w, h = (int(v) for v in str(mode).lower().replace(" ", "").split("x"))
+        if w > 0 and h > 0:
+            return (w, h)
+    except ValueError:
+        pass
+    return (0, 0)
+
+
+def publish_every(fps, hz):
+    """Publish once every N rendered frames. Counting frames (not checking a
+    timer) keeps the rate exact: a 50 Hz timer against 60 fps frames 16.7 ms
+    apart only fires every OTHER frame, i.e. 30 msg/s. 60 fps, 50-60 Hz → every
+    frame (60/s); 30 Hz → every 2nd frame."""
+    return max(1, round(fps / max(1.0, hz)))
+
+
+def set_nodelay(client):
+    """Turn off Nagle's algorithm on the MQTT socket. paho leaves it on, so the
+    kernel may hold each small 50 Hz state message until the previous one is
+    ACKed, bunching delivery into 40-200 ms clumps: the follower eye lags.
+    Called on every (re)connect."""
+    try:
+        sock = client.socket()
+        if sock is not None:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            return True
+    except (OSError, AttributeError):
+        pass
+    return False
+
 class EyeApp:
     def __init__(self, role, windowed, solo, eye="demon", show_stats=False, mode="eyes"):
         self.role = role
         self.solo = solo
+        self.mode = mode
+        self.eye = eye
         self.running = True
+        self.display_up = False           # False while waiting for the projector's HDMI
+        self.vsync = False
+        self.status = None                # ha_status.StatusPublisher, when MQTT is up
         self.renderer = make_renderer(mode, eye)
         self.schema = self.renderer.schema
         self.lerp = self.renderer.lerp
@@ -78,8 +130,8 @@ class EyeApp:
         self.client = None
         if not solo and mqtt is not None:
             self._setup_mqtt()
-        self._pub_interval = 1.0 / S.PUBLISH_HZ
-        self._last_pub = 0.0
+        self._pub_every = publish_every(S.FPS, S.PUBLISH_HZ)
+        self._frame_n = 0
         if self.active:
             self._set_projector(True)   # booting straight into the show
 
@@ -88,10 +140,11 @@ class EyeApp:
         self.vao = make_fullscreen_triangle()
         GL.glUseProgram(self.prog)
         self.renderer.bind(self.prog)
+        self._setup_render_target()
 
         self.stats = None
         if show_stats and stats_mod:
-            self.stats = stats_mod.Stats()
+            self.stats = stats_mod.Stats(refresh_hz=getattr(self, "refresh_hz", None))
             print(self.stats.describe(), flush=True)
         elif show_stats:
             print("[stats] stats.py not found", flush=True)
@@ -125,11 +178,23 @@ class EyeApp:
                 pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
                 pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 0 if self.gles else 3)
                 if windowed:
-                    pygame.display.set_mode((1280, 720), flags)
+                    size, mflags = (1280, 720), flags
                 else:
-                    pygame.display.set_mode((0, 0), flags | (pygame.FULLSCREEN if S.FULLSCREEN else 0))
+                    size = output_size(S.OUTPUT_MODE)
+                    mflags = flags | (pygame.FULLSCREEN if S.FULLSCREEN else 0)
+                # vsync: each flip waits for the display's refresh, so every
+                # rendered frame is shown exactly once. Without it frames land
+                # out of step with the projector (some shown twice, some never):
+                # judder, even at a high fps number.
+                try:
+                    pygame.display.set_mode(size, mflags, vsync=1)
+                    self.vsync = True
+                except pygame.error:
+                    pygame.display.set_mode(size, mflags)
+                    self.vsync = False
                 if waited:
                     print(f"[display] found a display after waiting {waited:.0f}s", flush=True)
+                self.display_up = True
                 break
             except pygame.error as e:
                 pygame.display.quit()
@@ -143,10 +208,8 @@ class EyeApp:
                         "that /dev/dri exists.")
                 msg = str(e)
                 if msg != last_msg or waited % 60 < retry:      # log on change, then ~once a minute
-                    print(f"[display] no display yet ({msg}) — projector off or HDMI unplugged? "
-                          f"retrying every {retry:.0f}s. Tip: video=HDMI-A-1:1920x1080@60D in "
-                          f"/boot/firmware/cmdline.txt keeps the port on with the projector off.",
-                          flush=True)
+                    print(f"[display] no display yet ({msg}) — normal while the projector is "
+                          f"off; retrying every {retry:.0f}s", flush=True)
                     last_msg = msg
                 slept = 0.0
                 while slept < retry and self.running:           # stay responsive to SIGTERM
@@ -160,6 +223,18 @@ class EyeApp:
         except pygame.error:
             pass
         self.W, self.H = pygame.display.get_surface().get_size()
+        self.out_W, self.out_H = self.W, self.H     # the screen; W/H become the render size
+        want = output_size(S.OUTPUT_MODE)
+        note = ""
+        if not windowed and want != (0, 0) and want != (self.W, self.H):
+            note = f" (asked for {want[0]}x{want[1]}; the projector may not offer it)"
+        try:
+            self.refresh_hz = float(pygame.display.get_current_refresh_rate()) or None
+        except (AttributeError, pygame.error):
+            self.refresh_hz = None
+        print(f"[gl] screen {self.W}x{self.H}"
+              f"{f' @ {self.refresh_hz:.0f} Hz' if self.refresh_hz else ''}"
+              f", vsync {'on' if getattr(self, 'vsync', False) else 'OFF'}{note}", flush=True)
         print(f"[gl] sdl_driver={pygame.display.get_driver()} "
               f"pyopengl={os.environ.get('PYOPENGL_PLATFORM', 'default')}", flush=True)
         print(f"[gl] {GL.glGetString(GL.GL_VERSION).decode()} "
@@ -183,20 +258,55 @@ class EyeApp:
             self.client.username_pw_set(S.MQTT_USER, S.MQTT_PASS)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
+        self._setup_status()              # sets the last will, so before connect()
         try:
             self.client.connect(S.MQTT_HOST, S.MQTT_PORT, keepalive=30)
             self.client.loop_start()
         except Exception as e:
             print(f"[mqtt] connect failed: {e} — running solo", file=sys.stderr)
             self.client = None
+            self.status = None
+            return
+        if self.status:
+            self.status.start()
+
+    # -- Home Assistant status (MQTT discovery; see ha_status.py) --
+    def _setup_status(self):
+        if not (S.STATUS_ENABLED and ha_status):
+            return
+        node = ha_status.resolve_node(S.STATUS_NODE)
+        self._host = ha_status.hostname()
+        probe = ir_control.projector_state if ir_control else (lambda: None)
+        self._projector = ha_status.CachedProbe(probe, S.STATUS_PROJECTOR_POLL_S)
+        disc = ha_status.eye_discovery(
+            node, S.STATUS_BASE_TOPIC, S.STATUS_DISCOVERY_PREFIX,
+            command_topic=S.COMMAND_TOPIC if self.role == "brain" else None)
+        self.status = ha_status.StatusPublisher(
+            self.client, node, disc, self._status_snapshot,
+            base=S.STATUS_BASE_TOPIC, prefix=S.STATUS_DISCOVERY_PREFIX,
+            refresh_s=S.STATUS_REFRESH_S)
+        print(f"[status] Home Assistant status as '{node}' on "
+              f"{S.STATUS_BASE_TOPIC}/{node}/ (discovery: {S.STATUS_DISCOVERY_PREFIX})", flush=True)
+
+    def _status_snapshot(self):
+        return {
+            "show": ha_status.show_state(self.active, self.display_up, self.stale),
+            "display": "up" if self.display_up else "waiting",
+            "projector": ha_status.projector_word(self._projector()),
+            "role": self.role, "mode": self.mode, "eye": self.eye,
+            "version": ha_status.VERSION, "host": self._host,
+        }
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         print(f"[mqtt] connected rc={reason_code}", flush=True)
+        set_nodelay(client)
         client.subscribe(S.COMMAND_TOPIC, qos=1)     # both roles listen for on/off
         if self.role == "brain":
             client.subscribe(S.TARGET_TOPIC, qos=0)  # only the brain takes targets
         else:
             client.subscribe(S.TOPIC, qos=0)
+        if self.status:
+            self.status.on_connect()
 
     def _on_message(self, client, userdata, msg):
         if msg.topic == S.COMMAND_TOPIC:
@@ -224,8 +334,26 @@ class EyeApp:
     # -- main loop --
     def run(self):
         clock = pygame.time.Clock()
+        # Frame pacing (measured on the Pi 5, 720p demon eye, 60 Hz projector):
+        #   cap   tick() capped just above the refresh rate: 66 fps, 0 late. Best.
+        #   exact sleep to exactly the refresh rate: 17 fps. It fights the
+        #         driver's own wait for the page flip (two clocks drifting),
+        #         so frames keep just missing and wait 4 refreshes.
+        #   off   no limit (driver flips only).
+        # SDL_VIDEO_DOUBLE_BUFFER=1 (env) locked it at 30 fps.
+        hz = getattr(self, "refresh_hz", None) or S.FPS
+        pacing = getattr(self, "pacing", "cap")
+        cap = {"cap": round(hz * 1.1), "off": 0}.get(pacing, 0)
+        period = 1.0 / hz
+        next_t = time.perf_counter()
+        print(f"[gl] frame pacing: {pacing}", flush=True)
         while self.running:
-            dt = min(clock.tick(S.FPS) / 1000.0, 0.05)
+            if pacing == "exact":
+                now = time.perf_counter()
+                if next_t > now:
+                    time.sleep(next_t - now)
+                next_t = max(next_t + period, time.perf_counter() - period)
+            dt = min(clock.tick(cap) / 1000.0, 0.05)
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT or (
                         ev.type == pygame.KEYDOWN and ev.key in (pygame.K_ESCAPE, pygame.K_q)):
@@ -233,10 +361,9 @@ class EyeApp:
 
             if self.director is not None:
                 self.net = dict(self.director.update(dt))
-                now = time.time()
-                if now - self._last_pub >= self._pub_interval:
+                self._frame_n += 1
+                if self._frame_n % self._pub_every == 0:
                     self._publish(self.net)
-                    self._last_pub = now
             else:
                 self._watchdog()
 
@@ -258,6 +385,8 @@ class EyeApp:
 
     def _exit_now(self):
         if self.client:
+            if self.status:
+                self.status.go_offline()  # a clean stop doesn't fire the last will
             self.client.loop_stop()
             self.client.disconnect()      # clean DISCONNECT so the broker isn't left waiting
         # Don't wait on SDL/EGL teardown: on some drivers it never returns, which
@@ -283,7 +412,53 @@ class EyeApp:
             k_lerp = 1.0 - (1.0 - self.lerp.get(k, 0.4)) ** (dt * S.FPS)
             self.disp[k] += (self.net[k] - self.disp[k]) * k_lerp
 
+    # -- reduced-resolution rendering (config [display] render_height) --
+    def _setup_render_target(self):
+        """Draw into an offscreen texture of render_height lines, then scale it
+        up to the screen in one cheap blit. The fragment shader runs once per
+        rendered pixel, so 720 instead of 1080 is ~2.25x less GPU work."""
+        self.fbo = None
+        rh = int(S.RENDER_HEIGHT or 0)
+        if rh <= 0 or rh >= self.out_H:
+            print(f"[gl] rendering at {self.out_W}x{self.out_H} (native)", flush=True)
+            return
+        w, h = max(1, round(self.out_W * rh / self.out_H)), rh
+        tex = GL.glGenTextures(1)
+        GL.glBindTexture(GL.GL_TEXTURE_2D, tex)
+        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, w, h, 0,
+                        GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, None)
+        for p, v in ((GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR), (GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR),
+                     (GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE), (GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)):
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, p, v)
+        fbo = GL.glGenFramebuffers(1)
+        GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, fbo)
+        GL.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0, GL.GL_TEXTURE_2D, tex, 0)
+        ok = GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER) == GL.GL_FRAMEBUFFER_COMPLETE
+        GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
+        if not ok:
+            print("[gl] offscreen target not supported — rendering at native size", flush=True)
+            return
+        self.fbo, self.W, self.H = fbo, w, h
+        print(f"[gl] rendering at {w}x{h}, scaled up to {self.out_W}x{self.out_H}", flush=True)
+
     def _draw(self):
+        fbo = getattr(self, "fbo", None)
+        if fbo is None or not self.active or self.stale:
+            if fbo is not None:
+                GL.glViewport(0, 0, self.out_W, self.out_H)
+            self._render()
+            return
+        GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, fbo)
+        GL.glViewport(0, 0, self.W, self.H)
+        self._render()
+        GL.glBindFramebuffer(GL.GL_READ_FRAMEBUFFER, fbo)
+        GL.glBindFramebuffer(GL.GL_DRAW_FRAMEBUFFER, 0)
+        GL.glViewport(0, 0, self.out_W, self.out_H)
+        GL.glBlitFramebuffer(0, 0, self.W, self.H, 0, 0, self.out_W, self.out_H,
+                             GL.GL_COLOR_BUFFER_BIT, GL.GL_LINEAR)
+        GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
+
+    def _render(self):
         GL.glClearColor(0.0, 0.0, 0.0, 1.0)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
         if not self.active or self.stale:      # idle or orphaned: pure black
@@ -313,6 +488,12 @@ def main():
     ap.add_argument("--host", help="override MQTT host from config")
     ap.add_argument("--start", choices=["playing", "idle"],
                     help="override start mode: render now, or wait for an on command")
+    ap.add_argument("--render-height", type=int, metavar="N",
+                    help="override [display] render_height (0 = output resolution); for testing")
+    ap.add_argument("--output-mode", metavar="WxH",
+                    help="override [display] output_mode, e.g. 1280x720 or native; for testing")
+    ap.add_argument("--pacing", choices=["cap", "exact", "off"], default="cap",
+                    help="frame pacing (testing): cap = default, exact, off")
     ap.add_argument("--stats", action="store_true",
                     help="print FPS / CPU / GPU / temperature while running")
     args = ap.parse_args()
@@ -324,11 +505,16 @@ def main():
         S.MQTT_HOST = args.host
     if args.start:
         S.START_MODE = args.start
+    if args.render_height is not None:
+        S.RENDER_HEIGHT = args.render_height
+    if args.output_mode:
+        S.OUTPUT_MODE = args.output_mode
     if not args.solo and mqtt is None:
         sys.exit("paho-mqtt not installed; use --solo to test without it.")
     try:
         app = EyeApp(args.role, args.windowed, args.solo, eye=args.eye,
                      show_stats=args.stats, mode=args.mode)
+        app.pacing = args.pacing
     except ValueError as e:
         sys.exit(str(e))
     app.run()

@@ -1,0 +1,150 @@
+# Halloween Eyes: alert automations.
+#
+# Add them: Settings -> Automations -> + Create automation -> Create new
+# automation -> top-right menu -> Edit in YAML, and paste ONE automation (the
+# block under one "- id:", without the leading "- "). Repeat for each. Or, if
+# you keep automations in automations.yaml, append the whole list.
+#
+# "Show hours" = switch.halloween_eyes_show is on. That switch mirrors the
+# retained command topic, so it follows Node-RED's sun state machine too.
+#
+# Each alert posts a persistent notification (the bell in the sidebar). To get
+# it on your phone as well, uncomment the notify action and use your device's
+# service name (Developer tools -> Actions, search "notify.mobile_app").
+
+- id: halloween_eyes_projector_not_on
+  alias: "Halloween eyes: projector didn't come on"
+  description: A projector is still off 2 minutes after the show went on.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: switch.halloween_eyes_show
+      to: "on"
+      for: "00:02:00"
+    - trigger: state
+      entity_id:
+        - binary_sensor.projector_left
+        - binary_sensor.projector_right
+      to: "off"
+      for: "00:02:00"
+  conditions:
+    - condition: state
+      entity_id: switch.halloween_eyes_show
+      state: "on"
+      for: "00:02:00"
+    - condition: template
+      value_template: >-
+        {{ is_state('binary_sensor.projector_left', 'off')
+           or is_state('binary_sensor.projector_right', 'off') }}
+  actions:
+    - variables:
+        which: >-
+          {{ (['left'] if is_state('binary_sensor.projector_left', 'off') else [])
+             + (['right'] if is_state('binary_sensor.projector_right', 'off') else []) }}
+    - action: persistent_notification.create
+      data:
+        notification_id: halloween_eyes_projector
+        title: "🎃 Projector didn't come on"
+        message: >-
+          The {{ which | join(' and ') }} projector is still off, 2 minutes after the
+          show started. Check the IR transmitter's aim and the projector's power.
+          (ssh in and run: python ir_control.py status)
+    # - action: notify.mobile_app_YOUR_PHONE
+    #   data:
+    #     title: "🎃 Projector didn't come on"
+    #     message: "{{ which | join(' and ') }} projector is still off"
+
+- id: halloween_eyes_eye_offline
+  alias: "Halloween eyes: an eye went offline"
+  description: An eye process stopped (crash, power, network) during show hours.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id:
+        - binary_sensor.eye_left_running
+        - binary_sensor.eye_right_running
+      to: "off"
+      for: "00:01:00"
+    - trigger: state
+      entity_id: switch.halloween_eyes_show
+      to: "on"
+      for: "00:01:00"
+  conditions:
+    - condition: state
+      entity_id: switch.halloween_eyes_show
+      state: "on"
+    - condition: template
+      value_template: >-
+        {{ not is_state('binary_sensor.eye_left_running', 'on')
+           or not is_state('binary_sensor.eye_right_running', 'on') }}
+  actions:
+    - variables:
+        which: >-
+          {{ (['left'] if not is_state('binary_sensor.eye_left_running', 'on') else [])
+             + (['right'] if not is_state('binary_sensor.eye_right_running', 'on') else []) }}
+    - action: persistent_notification.create
+      data:
+        notification_id: halloween_eyes_offline
+        title: "👁️ Eye offline"
+        message: >-
+          The {{ which | join(' and ') }} eye is not running during the show.
+          Check the Pi (pi-eye-{{ which | first }}.home): systemctl status demoneye
+
+- id: halloween_eyes_bridge_down
+  alias: "Halloween eyes: tracking bridge down"
+  description: The tracking bridge isn't running while the show is on.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.eye_bridge_running
+      to: "off"
+      for: "00:01:00"
+    - trigger: state
+      entity_id: switch.halloween_eyes_show
+      to: "on"
+      for: "00:01:00"
+  conditions:
+    - condition: state
+      entity_id: switch.halloween_eyes_show
+      state: "on"
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: binary_sensor.eye_bridge_running
+          state: "on"
+  actions:
+    - action: persistent_notification.create
+      data:
+        notification_id: halloween_eyes_bridge
+        title: "📡 Tracking bridge down"
+        message: >-
+          The eyes are running but nothing is feeding them targets, so they won't
+          follow anyone. Last seen on {{ states('sensor.bridge_host') }}:
+          systemctl status ha-bridge
+
+- id: halloween_eyes_nobody_tracked
+  alias: "Halloween eyes: nobody tracked all evening"
+  description: >-
+    3 hours into the show and the sensor hasn't seen anyone. Usually means the
+    mmWave sensor is aimed wrong or the bridge isn't reading it.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: switch.halloween_eyes_show
+      to: "on"
+      for: "03:00:00"
+  conditions:
+    - condition: template
+      value_template: >-
+        {% set seen = states('sensor.last_target_seen') %}
+        {{ seen in ['unknown', 'unavailable', 'none', '']
+           or as_datetime(seen) < now() - timedelta(hours=3) }}
+  actions:
+    - action: persistent_notification.create
+      data:
+        notification_id: halloween_eyes_nobody
+        title: "🕸️ Nobody tracked tonight"
+        message: >-
+          The show has been on for 3 hours and the sensor hasn't picked up anyone
+          (last person seen: {{ states('sensor.last_target_seen') }}). Check the
+          mmWave sensor's aim, and that its target entities update in HA.

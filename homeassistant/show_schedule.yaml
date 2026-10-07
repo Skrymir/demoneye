@@ -1,0 +1,42 @@
+# Halloween Eyes: turn the show on at dusk and off at 11 pm.
+#
+# Only needed if Home Assistant schedules the show. If Node-RED's sun state
+# machine already does it (nodered_flow.json), skip this file: two schedulers
+# would fight.
+#
+# Add them: Settings -> Automations -> + Create automation -> Create new
+# automation -> top-right menu -> Edit in YAML, and paste ONE automation (the
+# block under one "- id:", without the leading "- ").
+#
+# The command is published retained (QoS 1), so a Pi that reboots mid-evening
+# picks up the current state at once. Flipping switch.halloween_eyes_show does
+# the same thing by hand.
+
+- id: halloween_eyes_on_at_dusk
+  alias: "Halloween eyes: ON at dusk"
+  mode: single
+  triggers:
+    - trigger: sun
+      event: sunset
+      offset: "-00:15:00"
+  actions:
+    - action: mqtt.publish
+      data:
+        topic: halloween/eyes/command
+        payload: "on"
+        qos: 1
+        retain: true
+
+- id: halloween_eyes_off_at_11pm
+  alias: "Halloween eyes: OFF at 11 pm"
+  mode: single
+  triggers:
+    - trigger: time
+      at: "23:00:00"
+  actions:
+    - action: mqtt.publish
+      data:
+        topic: halloween/eyes/command
+        payload: "off"
+        qos: 1
+        retain: true
