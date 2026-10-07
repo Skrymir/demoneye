@@ -37,7 +37,7 @@ noticed. Use the same `--eye` on both Pis.
 - **[docs/EYES.md](docs/EYES.md)** — the eye types, tuning their look, mirroring a pair
 - **[docs/TRACKING.md](docs/TRACKING.md)** — the mmWave bridge, calibration, `track_test.py`, projector IR
 - **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — running on the projectors, on/off behaviour, `--stats`, frame rate, sync troubleshooting
-- **[homeassistant/](homeassistant/README.md)** — everything on the Home Assistant side: live show status, the dashboard card, alerts, the on/off schedule (HA or Node-RED)
+- **[homeassistant/](homeassistant/README.md)** — everything on the Home Assistant side: live show status, the dashboard card, alerts, the Node-RED on/off flow
 
 ## Layout
 

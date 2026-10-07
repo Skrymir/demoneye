@@ -8,8 +8,7 @@ Nothing in this folder runs on the Pis (`deploy.sh` doesn't copy it).
 |---|---|---|
 | [dashboard_card.yaml](dashboard_card.yaml) | Status card: health summary, both eyes, tracking | Dashboard → + Add card → Manual |
 | [alert_automations.yaml](alert_automations.yaml) | Four alerts (projector, eye offline, bridge down, nobody tracked) | Settings → Automations |
-| [show_schedule.yaml](show_schedule.yaml) | On at dusk / off at 11 pm, if HA schedules the show | Settings → Automations |
-| [nodered_flow.json](nodered_flow.json) | Node-RED nodes that publish on/off, if Node-RED schedules it | Node-RED → Import |
+| [nodered_flow.json](nodered_flow.json) | Node-RED nodes that publish the show's on/off | Node-RED → Import |
 
 ## Show status
 
@@ -65,16 +64,12 @@ Everything follows one retained (QoS 1) message on `halloween/eyes/command`:
 Pis, the projectors (over IR) and the tracking bridge react to it together,
 and a Pi that reboots mid-evening picks up the current state at once.
 
-Pick **one** scheduler:
+**Node-RED schedules the show:** import [nodered_flow.json](nodered_flow.json)
+and wire your sun state machine into *Set ON* / *Set OFF*. Its broker node
+points at `192.168.86.5:1883`.
 
-- **Node-RED** (what's in use now): import [nodered_flow.json](nodered_flow.json)
-  and wire your sun state machine into *Set ON* / *Set OFF*. Its broker node
-  points at `192.168.86.5:1883`.
-- **A Home Assistant automation:** [show_schedule.yaml](show_schedule.yaml)
-  (on 15 minutes before sunset, off at 11 pm).
-
-Either way, `switch.halloween_eyes_show` shows the current state and flips it
-by hand. The next scheduled change overrides a manual one.
+`switch.halloween_eyes_show` shows the current state and flips it by hand. The
+next scheduled change from Node-RED overrides a manual one.
 
 How the Pis behave before the first command (`start = idle` or `playing` in
 `config.ini`) is covered in [docs/OPERATIONS.md](../docs/OPERATIONS.md#remote-control-home-assistant).

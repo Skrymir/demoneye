@@ -18,6 +18,9 @@
 - `deploy.sh` no longer requires the stage files; its `rsync --delete` removes
   them from the Pis on the next deploy.
 - The three eyes render pixel-identically before and after (verified).
+- Removed `homeassistant/show_schedule.yaml`: Node-RED schedules the show; the
+  HA README now describes only the Node-RED flow.
+- Removed a stray old copy of `deploy.sh` from `tests/`.
 
 ## Walker eye — 2026-10-07
 

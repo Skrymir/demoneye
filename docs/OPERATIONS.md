@@ -160,7 +160,7 @@ works (so an MQTT light/switch entity drives it directly).
 **Publish the command retained** so a Pi that reboots mid-event immediately
 picks up the current on/off state instead of waiting for the next automation.
 
-The scheduling side (the Node-RED flow, or a dusk / 11 pm HA automation), the
+The scheduling side (the Node-RED flow), the
 manual `switch.halloween_eyes_show`, live status for every part of the show and
 the alerts are all in [homeassistant/](../homeassistant/README.md).
 
