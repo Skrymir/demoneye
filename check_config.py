@@ -287,7 +287,7 @@ def parse_service(text):
     args = shlex.split(exec_line) if exec_line else []
     def opt(name, default=None):
         return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
-    return {"role": opt("--role"), "mode": opt("--mode", "eyes"), "eye": opt("--eye", "demon"),
+    return {"role": opt("--role"), "mode": opt("--mode", "eyes"), "eye": opt("--eye", "walker"),
             "start": opt("--start"), "kms_index": idx, "found": bool(exec_line)}
 
 
@@ -544,7 +544,7 @@ def check_pi(host):
         rep.info("IR projector control is off on this Pi")
 
     if svc.get("mode") == "stage" and g(cp, "stage", "figure_atlas") and rc.get("ATLAS") != "yes" \
-            and svc.get("eye") in (None, "sprite", "demon"):
+            and svc.get("eye") in (None, "sprite", "demon", "human", "walker"):
         rep.err(f"figure_atlas not found on this Pi: {g(cp, 'stage', 'figure_atlas')}")
     return rep, cp, svc
 

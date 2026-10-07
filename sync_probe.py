@@ -101,7 +101,8 @@ def main():
     time.sleep(1.0)                                  # let subscriptions settle
     with lock:
         arrivals.clear()
-    end = time.monotonic() + secs
+    start = time.monotonic()
+    end = start + secs
     while time.monotonic() < end:
         c.publish(probe_topic, repr(time.monotonic()), qos=0)
         time.sleep(0.1)
@@ -116,6 +117,10 @@ def main():
 
     # 1. state stream
     print("== state stream from the brain (as received here)")
+    # only the measurement window: the listener keeps receiving while the ping
+    # test finishes, and counting those inflated the rate (63.7/s for a 60/s brain)
+    with lock:
+        arrivals[:] = [t for t in arrivals if start <= t <= end]
     gaps = [(b - a) * 1000 for a, b in zip(arrivals, arrivals[1:])]
     rate = len(arrivals) / secs
     if len(arrivals) < 5:

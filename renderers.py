@@ -303,7 +303,7 @@ def make_renderer(mode, figure):
         return SpiritsRenderer()
     if figure in ("silhouette", "sprite", "ghost"):
         return FigureRenderer(figure)
-    if figure in EYE_SHADERS:            # default --eye demon in stage mode
+    if figure in EYE_SHADERS:            # the default --eye (an eye name) in stage mode
         return FigureRenderer("sprite" if S.FIGURE_ATLAS else "silhouette")
     raise ValueError(f"unknown stage figure {figure!r}; choose one of "
                      f"{sorted(STAGE_SHADERS)}")

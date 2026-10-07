@@ -1,5 +1,17 @@
 # Changelog
 
+## Walker eye — 2026-10-07
+
+- **The walker is now the default eye** (`--eye walker`). Both services start
+  without `--eye`, so a deploy switches the show to it.
+- **Walker shader ~1.8x faster, identical picture.** Its frost, iris and fire
+  layers (11 noise evaluations plus a voronoi per pixel) were computed for
+  every pixel around the eye, including the eyelid skin where `lid` multiplies
+  them to zero. They now run only inside the aperture, and the sclera and iris
+  each only where the other isn't fully opaque. Verified pixel-identical over
+  40 frames (gazes, blinks, dilation, moods, fire phases); 27.5 -> 15.6 ms per
+  720p frame in software GL.
+
 ## Eye sync latency — 2026-10-06
 
 - **Frame pacing, measured on the Pi 5 (720p demon eye, 60 Hz):** frames

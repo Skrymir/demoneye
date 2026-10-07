@@ -4,7 +4,7 @@
 
 Pick which eye to render with `--eye`:
 
-- `--eye demon` (default) — a dragon-style burning eye: glowing slit-pupil iris
+- `--eye demon` — a dragon-style burning eye: glowing slit-pupil iris
   set in a shaped reptilian lid aperture, with scaled hide faintly lit by its
   own fire. The lids animate to show **emotion** — idle glares and wide flares,
   a surprise flare when it acquires a tracked target, then a narrowed glare
@@ -12,7 +12,7 @@ Pick which eye to render with `--eye`:
 - `--eye human` — a pale bloodshot human eyeball set in fleshy lids: veined
   sclera, colored iris, round pupil, lash line and fold crease. Emotions flare
   it into a wide horror stare or hood it into a glare.
-- `--eye walker` — a frozen undead eye: a luminous crystalline ice-blue iris
+- `--eye walker` (default) — a frozen undead eye: a luminous crystalline ice-blue iris
   with a pinprick pupil, sunk in a deeply shadowed socket, surrounded by pale
   crevassed frost-flecked skin. Same emotions, run cold.
 

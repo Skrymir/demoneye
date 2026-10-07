@@ -479,7 +479,7 @@ def main():
     ap.add_argument("--mode", choices=["eyes", "stage"], default="eyes",
                     help="eyes = an eye per projector; stage = the projectors are "
                          "viewports onto one wide stage figures move across")
-    ap.add_argument("--eye", default="demon",
+    ap.add_argument("--eye", default="walker",
                     help=f"eyes mode: {'|'.join(EYE_FIGURES)}.  "
                          f"stage mode: {'|'.join(STAGE_FIGURES)}")
     ap.add_argument("--windowed", action="store_true", help="run in a window (testing)")
