@@ -5,10 +5,10 @@ import settings as S
 
 def test_shipped_config_loads_and_overrides_defaults():
     cp = S.load_config("config.ini")
-    assert cp.has_section("mqtt") and cp.has_section("stage") and cp.has_section("projector")
-    assert 0.0 <= S.STAGE_FROM < S.STAGE_TO <= 1.0
+    assert cp.has_section("mqtt") and cp.has_section("display") and cp.has_section("projector")
+    assert not cp.has_section("stage")          # stage mode was removed
     assert S.STALE_AFTER_S >= 0
-    assert S.FIGURE_FACES in ("left", "right")
+    assert S.OUTPUT_MODE
 
 
 def test_missing_config_uses_defaults(tmp_path):
@@ -17,9 +17,10 @@ def test_missing_config_uses_defaults(tmp_path):
     assert S.PUBLISH_HZ > 0
 
 
-def test_atlas_path_is_resolved_relative_to_config(tmp_path):
+def test_leftover_stage_section_is_ignored(tmp_path):
+    """A Pi's own config.ini may still have [stage]; it must still load."""
     cfg = tmp_path / "c.ini"
-    cfg.write_text("[stage]\nfigure_atlas = figures/x.png\n")
+    cfg.write_text("[stage]\nstage_from = 0.0\nfigure_atlas = figures/x.png\n[display]\nscale = 1.2\n")
     S.load_config(str(cfg))
-    assert S.FIGURE_ATLAS == str(tmp_path / "figures" / "x.png")
+    assert S.EYE_SCALE == 1.2
     S.load_config("config.ini")   # restore for other tests

@@ -13,18 +13,17 @@ changes anything on the Pis.
 Per Pi it checks: every key is one the app actually reads (catches typos),
 values have the right type and a sensible range, no inline comments (the app
 does NOT strip them — `mirror = true ; note` breaks startup), the broker is
-reachable from that Pi, IR settings point at a real ir-ctl and keymap, the
-sprite atlas exists, and the installed service's role / mode / eye and the
-SDL_KMSDRM_DEVICE_INDEX match the HDMI card the projector is actually on.
+reachable from that Pi, IR settings point at a real ir-ctl and keymap, and the
+installed service's role / eye and the SDL_KMSDRM_DEVICE_INDEX match the HDMI
+card the projector is actually on.
 
 Tracking bridge (ha_bridge): whether it's installed / enabled / running on each
 Pi, its bridge.ini (same key, type and inline-comment checks), that it has an HA
 token, its Python deps, that Home Assistant is reachable, and that its broker
 and topics match the eyes' config.ini on that Pi.
 
-Across the pair: exactly one brain, same mode and eye, same broker and topics,
-mirror on at most one Pi, stage window spans that don't overlap, and the
-tracking bridge running on exactly ONE Pi.
+Across the pair: exactly one brain, the same eye, same broker and topics,
+mirror on at most one Pi, and the tracking bridge running on exactly ONE Pi.
 
     python3 check_config.py --file bridge.ini     # a local bridge.ini works too
 
@@ -69,12 +68,6 @@ SCHEMA = {
         "verify": (B, None), "status_path": (S, None),
         "on_timeout_s": (F, (5, 180)), "off_timeout_s": (F, (5, 180)), "retries": (I, (0, 3)),
     },
-    "stage": {
-        "stage_from": (F, (0.0, 1.0)), "stage_to": (F, (0.0, 1.0)),
-        "figure_scale": (F, (0.05, 2.0)), "speed": (F, (0.001, 1.0)),
-        "freeze_when_watched": (B, None), "figure_faces": (S, {"left", "right"}),
-        "figure_stride": (F, (0.001, 1.0)), "figure_atlas": (S, None),
-    },
     "display": {
         "center_x": (F, (0.0, 1.0)), "center_y": (F, (0.0, 1.0)),
         "scale": (F, (0.05, 5.0)), "mirror": (B, None), "mirror_gaze": (B, None),
@@ -115,6 +108,10 @@ BRIDGE_DEFAULTS = {"follow_command": True, "start_enabled": False, "heartbeat_s"
                    "hold_s": 2.0, "target_topic": "halloween/eyes/target",
                    "command_topic": "halloween/eyes/command", "host": "192.168.86.5",
                    "port": "1883", "url": "ws://homeassistant.local:8123/api/websocket"}
+
+# Sections left over from features that were removed: reported as "safe to
+# delete" rather than as a typo.
+RETIRED_SECTIONS = {"stage": "stage mode was removed; the app only draws eyes"}
 
 BOOLS = {"1", "yes", "true", "on", "0", "no", "false", "off"}
 
@@ -186,14 +183,12 @@ def sections(text):
 def remote_checks(host, cp, ha_url=None):
     """Second round-trip: checks that need values from the config."""
     keymap = cp.get("projector", "keymap", fallback="")
-    atlas = cp.get("stage", "figure_atlas", fallback="")
     mhost = cp.get("mqtt", "host", fallback="")
     mport = cp.get("mqtt", "port", fallback="1883")
     q = shlex.quote
     script = f"""
 cd ~/{REMOTE_DIR} 2>/dev/null
 echo "KEYMAP $( [ -n {q(keymap)} ] && [ -f {q(keymap)} ] && echo yes || echo no )"
-echo "ATLAS $( [ -n {q(atlas)} ] && [ -f {q(atlas)} ] && echo yes || echo no )"
 echo "BROKER $(timeout 3 bash -c 'exec 3<>/dev/tcp/'{q(mhost)}'/'{q(mport)} 2>/dev/null && echo yes || echo no)"
 dev=$(ip route get {q(mhost)} 2>/dev/null | grep -o 'dev [^ ]*' | cut -d' ' -f2)
 echo "ROUTE $dev"
@@ -226,6 +221,9 @@ def parse_and_check(text, rep, schema=SCHEMA, fname="config.ini", optional=()):
 
     problems_before = rep.errors + rep.warnings
     for sec in cp.sections():
+        if sec not in SCHEMA and sec in RETIRED_SECTIONS:
+            rep.info(f"{fname}: [{sec}] is no longer used ({RETIRED_SECTIONS[sec]}) — safe to delete")
+            continue
         if sec not in SCHEMA:
             near = difflib.get_close_matches(sec, SCHEMA, n=1)
             rep.warn(f"{fname}: [{sec}] is not a section it reads" + (f" (did you mean [{near[0]}]?)" if near else ""))
@@ -275,7 +273,7 @@ def g(cp, sec, key, kind=S, default=None):
 
 
 def parse_service(text):
-    """Role / mode / eye and the KMSDRM index from the installed unit."""
+    """Role / eye and the KMSDRM index from the installed unit."""
     exec_line, idx = "", None
     for line in text.splitlines():
         s = line.strip()
@@ -287,7 +285,7 @@ def parse_service(text):
     args = shlex.split(exec_line) if exec_line else []
     def opt(name, default=None):
         return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
-    return {"role": opt("--role"), "mode": opt("--mode", "eyes"), "eye": opt("--eye", "walker"),
+    return {"role": opt("--role"), "mode": opt("--mode"), "eye": opt("--eye", "walker"),
             "start": opt("--start"), "kms_index": idx, "found": bool(exec_line)}
 
 
@@ -467,7 +465,10 @@ def check_pi(host):
         if svc["role"] not in ("brain", "follower"):
             rep.err(f"service has no valid --role (got {svc['role']!r})")
         else:
-            rep.ok(f"service: --role {svc['role']} --mode {svc['mode']} --eye {svc['eye']}")
+            rep.ok(f"service: --role {svc['role']} --eye {svc['eye']}")
+        if svc["mode"] not in (None, "eyes"):
+            rep.err(f"service runs --mode {svc['mode']}, which no longer exists (the app only draws "
+                    "eyes) — remove --mode from ExecStart: sudo systemctl edit --full demoneye")
         active = sec.get("ACTIVE", "").strip()
         (rep.ok if active == "active" else rep.warn)(f"service is {active or 'unknown'}")
 
@@ -543,9 +544,6 @@ def check_pi(host):
     else:
         rep.info("IR projector control is off on this Pi")
 
-    if svc.get("mode") == "stage" and g(cp, "stage", "figure_atlas") and rc.get("ATLAS") != "yes" \
-            and svc.get("eye") in (None, "sprite", "demon", "human", "walker"):
-        rep.err(f"figure_atlas not found on this Pi: {g(cp, 'stage', 'figure_atlas')}")
     return rep, cp, svc
 
 
@@ -612,12 +610,12 @@ def check_pair(pis):
         else:
             rep.err(f"more than one brain ({', '.join(brains)}) — they'll fight. Make one a follower")
 
-    shows = {h: ((svc or {}).get("mode"), (svc or {}).get("eye")) for h, _, svc in live if svc and svc.get("found")}
-    if len(set(shows.values())) > 1:
-        rep.err("different shows: " + ", ".join(f"{h} {m}/{e}" for h, (m, e) in shows.items())
-                + " — use the same --mode and --eye on both")
-    elif shows:
-        rep.ok(f"same show on both ({next(iter(shows.values()))[0]}/{next(iter(shows.values()))[1]})")
+    eyes = {h: (svc or {}).get("eye") for h, _, svc in live if svc and svc.get("found")}
+    if len(set(eyes.values())) > 1:
+        rep.err("different eyes: " + ", ".join(f"{h} {e}" for h, e in eyes.items())
+                + " — use the same --eye on both")
+    elif eyes:
+        rep.ok(f"same eye on both ({next(iter(eyes.values()))})")
 
     for key in ("host", "port", "topic", "command_topic", "target_topic"):
         vals = {h: g(cp, "mqtt", key) for h, cp, _ in live}
@@ -653,21 +651,6 @@ def check_pair(pis):
     if len(set(starts.values())) > 1:
         rep.warn("start differs: " + ", ".join(f"{h}={v}" for h, v in starts.items()))
 
-    file_mode = all(svc is None for _, _, svc in live)
-    if file_mode or any((svc or {}).get("mode") == "stage" for _, _, svc in live):
-        spans = sorted(((g(cp, "stage", "stage_from", F, 0.0), g(cp, "stage", "stage_to", F, 1.0), h)
-                        for h, cp, _ in live))
-        for a, b, h in spans:
-            if not a < b:
-                rep.err(f"{h}: stage_from ({a}) must be less than stage_to ({b})")
-        for (a1, b1, h1), (a2, b2, h2) in zip(spans, spans[1:]):
-            if a2 < b1:
-                rep.err(f"stage spans overlap: {h1} {a1}–{b1} and {h2} {a2}–{b2} — "
-                        "a figure would appear in both windows at once")
-            elif a2 == b1:
-                rep.warn(f"no gap between {h1} and {h2} — the wall between the windows is the effect")
-            else:
-                rep.ok(f"stage spans {h1} {a1}–{b1}, {h2} {a2}–{b2} (wall gap {a2 - b1:.2f})")
     return rep
 
 
@@ -708,7 +691,7 @@ def main():
     if errors:
         print(_c("31", f"{errors} error(s), {warnings} warning(s) — fix the errors before the show"))
         sys.exit(1)
-    print(_c("32", f"no errors") + (f", {warnings} warning(s)" if warnings else " — good to go"))
+    print(_c("32", "no errors") + (f", {warnings} warning(s)" if warnings else " — good to go"))
 
 
 if __name__ == "__main__":

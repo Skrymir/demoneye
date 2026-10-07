@@ -16,7 +16,6 @@ Standalone check of what's available here:
 """
 
 import glob
-import os
 import shutil
 import subprocess
 import time

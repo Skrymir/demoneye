@@ -225,7 +225,7 @@ second.
 
 ## Eyes out of sync
 
-The brain streams its state 50×/s and the follower draws whatever arrived
+The brain streams its state once per frame (60×/s) and the follower draws whatever arrived
 last, so on a healthy network the follower is only a few milliseconds behind.
 Visible lag almost always means messages are being **delayed and released in
 clumps**. Measure it first, on the follower, while the show is playing:
@@ -254,7 +254,7 @@ iw dev wlan0 get power_save                           # → Power save: off
 a reboot.) Do it on **both** Pis. `check_config.py` warns when it's on.
 
 **2. Nagle on the broker.** Mosquitto's default lets it hold a small message
-back until the previous one is acknowledged, and with 50 tiny messages a
+back until the previous one is acknowledged, and with 60 tiny messages a
 second that turns into 40–60 ms clumps. (Measured on a test broker: p95 spacing
 58 ms by default, 21 ms with the fix.) The eyes and the bridge already disable
 it on their own connections; the broker needs it too. With the Home Assistant

@@ -22,7 +22,7 @@ devices appear under Settings → Devices & services → MQTT:
 | **Demon Eye Left** / **Right** | `binary_sensor.eye_left_running` | The eye process is up. Turns **off** on a clean stop at once, or via the MQTT last will about 45 s after a crash, power loss or network drop |
 | | `binary_sensor.projector_left` | Projector really on (HDMI hot-plug state, read every 5 s). *Unknown* if a forced `video=...D` mode hides it |
 | | `sensor.eyes_left_show_state` | `playing`, `idle` (show off, black), `waiting_for_display` (on, but the projector's HDMI isn't up yet), `lost_brain` (follower has stopped hearing the brain, so it's dark) |
-| | `sensor.eyes_left_role` | `brain` / `follower`; attributes: `mode`, `eye`, `display`, `version`, `host` |
+| | `sensor.eyes_left_role` | `brain` / `follower`; attributes: `eye`, `display`, `version`, `host` |
 | **Demon Eye Tracking Bridge** | `binary_sensor.eye_bridge_running` | `ha_bridge.py` is up (same last-will rules) |
 | | `binary_sensor.tracking_active` | Someone is being tracked right now |
 | | `sensor.last_target_seen` | When someone was last seen (timestamp). Kept while the show is off and across bridge restarts |
@@ -102,7 +102,7 @@ mosquitto_sub -h 192.168.86.5 -v -t 'halloween/eyes/status/#'
 
 Example eye state:
 ```json
-{"display": "up", "eye": "demon", "host": "pi-eye-left", "mode": "eyes",
+{"display": "up", "eye": "walker", "host": "pi-eye-left",
  "projector": "on", "role": "brain", "show": "playing", "version": "2026.10.06"}
 ```
 

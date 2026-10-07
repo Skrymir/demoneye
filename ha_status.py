@@ -139,7 +139,7 @@ def eye_discovery(node, base="halloween/eyes/status", prefix="homeassistant",
             "value_template": "{{ value_json.role }}",
             "json_attributes_topic": t["state"],
             "json_attributes_template":
-                "{{ {'mode': value_json.mode, 'eye': value_json.eye, 'display': value_json.display,"
+                "{{ {'eye': value_json.eye, 'display': value_json.display,"
                 " 'version': value_json.version, 'host': value_json.host} | tojson }}",
             "entity_category": "diagnostic", "icon": "mdi:account-tie-hat",
             "default_entity_id": f"sensor.eyes_{node}_role", "device": dev,

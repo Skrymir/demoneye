@@ -23,7 +23,6 @@ import configparser
 import json
 import math
 import os
-import sys
 import time
 
 import paho.mqtt.client as mqtt

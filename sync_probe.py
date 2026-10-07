@@ -20,7 +20,6 @@ It measures, from this Pi:
 import os
 import re
 import socket
-import statistics
 import subprocess
 import sys
 import threading

@@ -43,9 +43,7 @@ TTYVHangup=yes
 #EnvironmentFile=-/etc/demoneye.env
 
 # >>> Change --role to "brain" on ONE Pi and "follower" on the other <<<
-# Pick what to show (the SAME on both Pis):
-#   eyes:   --eye demon | human | walker
-#   stage:  --mode stage --eye silhouette | sprite | ghost | mansion | spirits
+# Which eye (the SAME on both Pis): --eye walker (default) | demon | human
 ExecStart=/home/joshc/demoneye/venv/bin/python /home/joshc/demoneye/demoneye.py --role follower
 Restart=on-failure
 RestartSec=3

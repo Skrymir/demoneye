@@ -48,8 +48,8 @@ cd "$HERE"
 # Refuse to deploy an incomplete or out-of-date folder: rsync --delete would
 # make the Pis match it, removing newer files there.
 missing=()
-for f in demoneye.py settings.py renderers.py directors.py stage.py glsl_common.py \
-         glutil.py eye_shaders.py stage_shaders.py ir_control.py ha_status.py requirements.txt tests; do
+for f in demoneye.py settings.py renderers.py directors.py glsl_common.py \
+         glutil.py eye_shaders.py ir_control.py ha_status.py requirements.txt tests; do
   [ -e "$f" ] || missing+=("$f")
 done
 if [ ${#missing[@]} -gt 0 ]; then

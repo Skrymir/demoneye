@@ -44,12 +44,8 @@ cards:
         name: Show (manual on/off)
       - type: attribute
         entity: sensor.eyes_left_role
-        attribute: mode
-        name: Mode
-      - type: attribute
-        entity: sensor.eyes_left_role
         attribute: eye
-        name: Figure
+        name: Eye
 
   - type: grid
     columns: 2

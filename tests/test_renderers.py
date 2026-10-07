@@ -1,11 +1,9 @@
-"""Every renderer builds its program and draws a frame (offscreen GLES).
+"""Every eye builds its program and draws a frame (offscreen GLES).
 Skipped where no GL context is available."""
 import pytest
 
 import settings as S
-from renderers import make_renderer, EYE_FIGURES, STAGE_FIGURES
-
-ALL = [("eyes", f) for f in EYE_FIGURES] + [("stage", f) for f in STAGE_FIGURES]
+from renderers import make_renderer, EYE_FIGURES
 
 
 @pytest.fixture(scope="module")
@@ -28,11 +26,11 @@ def gl():
     pygame.quit()
 
 
-@pytest.mark.parametrize("mode,fig", ALL, ids=[f"{m}-{f}" for m, f in ALL])
-def test_renderer_builds_and_draws(gl, mode, fig):
+@pytest.mark.parametrize("eye", EYE_FIGURES)
+def test_renderer_builds_and_draws(gl, eye):
     import demoneye as D
     from glutil import build_program, make_fullscreen_triangle
-    r = make_renderer(mode, fig)
+    r = make_renderer(eye)
     app = D.EyeApp.__new__(D.EyeApp)
     app.active, app.stale, app.renderer, app.schema = True, False, r, r.schema
     app.prog = build_program(r.frag, True, r.defines)
@@ -45,19 +43,11 @@ def test_renderer_builds_and_draws(gl, mode, fig):
     assert gl.glGetError() == gl.GL_NO_ERROR
 
 
-def test_stage_default_figure_follows_atlas_setting():
-    S.FIGURE_ATLAS = ""
-    assert make_renderer("stage", "demon").name == "silhouette"
-    S.FIGURE_ATLAS = "figures/shambler.png"
-    assert make_renderer("stage", "demon").name == "sprite"
-    S.FIGURE_ATLAS = ""
-
-
-def test_unknown_figure_is_a_clear_error():
+def test_unknown_eye_is_a_clear_error():
+    with pytest.raises(ValueError, match="walker"):
+        make_renderer("dragon")
     with pytest.raises(ValueError):
-        make_renderer("eyes", "dragon")
-    with pytest.raises(ValueError):
-        make_renderer("stage", "vampire")
+        make_renderer("ghost")              # stage figures are gone
 
 
 def test_reduced_resolution_render_target(gl):
@@ -67,7 +57,7 @@ def test_reduced_resolution_render_target(gl):
     saved = S.RENDER_HEIGHT
     try:
         S.RENDER_HEIGHT = 90
-        r = make_renderer("eyes", "demon")
+        r = make_renderer("demon")
         app = D.EyeApp.__new__(D.EyeApp)
         app.active, app.stale, app.renderer, app.schema = True, False, r, r.schema
         app.prog = build_program(r.frag, True, r.defines)

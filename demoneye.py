@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Synchronized projector show for Halloween: eyes, or figures crossing between
-windows — on one or more Raspberry Pis, kept in step over MQTT.
+Synchronized projector eyes for Halloween: one eye per projector, on two
+Raspberry Pis kept in step over MQTT.
 
   brain:     runs a director, streams state at PUBLISH_HZ, renders it
   follower:  renders whatever state it receives, with the same smoothing
 
     python demoneye.py --role brain    [--eye demon|human|walker] [--windowed] [--solo]
-    python demoneye.py --role follower [--mode stage --eye ghost|mansion|spirits ...]
+    python demoneye.py --role follower [--eye ...]
 
-Everything tunable lives in settings.py / config.ini. What gets drawn is a
-Renderer (renderers.py); this file is only the window, the network, the loop
-and the watchdog.
+Everything tunable lives in settings.py / config.ini. The eye itself is the
+EyeRenderer (renderers.py) and its shader (eye_shaders.py); this file is only
+the window, the network, the loop and the watchdog.
 """
 
 import argparse
@@ -59,7 +59,7 @@ except ImportError:
 import settings as S
 from directors import _parse_command, _parse_target
 from glutil import build_program, make_fullscreen_triangle
-from renderers import make_renderer, EYE_FIGURES, STAGE_FIGURES
+from renderers import make_renderer, EYE_FIGURES
 
 
 
@@ -99,16 +99,15 @@ def set_nodelay(client):
     return False
 
 class EyeApp:
-    def __init__(self, role, windowed, solo, eye="demon", show_stats=False, mode="eyes"):
+    def __init__(self, role, windowed, solo, eye="walker", show_stats=False):
         self.role = role
         self.solo = solo
-        self.mode = mode
         self.eye = eye
         self.running = True
         self.display_up = False           # False while waiting for the projector's HDMI
         self.vsync = False
         self.status = None                # ha_status.StatusPublisher, when MQTT is up
-        self.renderer = make_renderer(mode, eye)
+        self.renderer = make_renderer(eye)
         self.schema = self.renderer.schema
         self.lerp = self.renderer.lerp
         self.net = dict(self.schema)      # latest authoritative state
@@ -293,7 +292,7 @@ class EyeApp:
             "show": ha_status.show_state(self.active, self.display_up, self.stale),
             "display": "up" if self.display_up else "waiting",
             "projector": ha_status.projector_word(self._projector()),
-            "role": self.role, "mode": self.mode, "eye": self.eye,
+            "role": self.role, "eye": self.eye,
             "version": ha_status.VERSION, "host": self._host,
         }
 
@@ -343,7 +342,7 @@ class EyeApp:
                 print(f"[track] target received  x={t[1]:+.2f} y={t[2]:+.2f}", flush=True)
             self._target_seen_at = now
         elif last:
-            print(f"[track] target released", flush=True)
+            print("[track] target released", flush=True)
             self._target_seen_at = 0.0
 
     def _publish(self, state):
@@ -388,7 +387,6 @@ class EyeApp:
 
             self.t += dt
             self._smooth(dt)
-            self.renderer.after_smooth(self, dt)
             self._draw()
             pygame.display.flip()
 
@@ -495,12 +493,11 @@ def main():
     default_cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
     ap = argparse.ArgumentParser(description="Halloween projector show")
     ap.add_argument("--role", choices=["brain", "follower"], required=True)
-    ap.add_argument("--mode", choices=["eyes", "stage"], default="eyes",
-                    help="eyes = an eye per projector; stage = the projectors are "
-                         "viewports onto one wide stage figures move across")
-    ap.add_argument("--eye", default="walker",
-                    help=f"eyes mode: {'|'.join(EYE_FIGURES)}.  "
-                         f"stage mode: {'|'.join(STAGE_FIGURES)}")
+    # --mode is gone (the app only draws eyes); still accepted as "eyes" so an
+    # older service line with --mode eyes keeps working.
+    ap.add_argument("--mode", choices=["eyes"], default="eyes", help=argparse.SUPPRESS)
+    ap.add_argument("--eye", default="walker", choices=EYE_FIGURES,
+                    help="which eye to draw (default walker)")
     ap.add_argument("--windowed", action="store_true", help="run in a window (testing)")
     ap.add_argument("--solo", action="store_true", help="no MQTT (single-machine test)")
     ap.add_argument("--config", default=default_cfg, help="path to config.ini")
@@ -532,7 +529,7 @@ def main():
         sys.exit("paho-mqtt not installed; use --solo to test without it.")
     try:
         app = EyeApp(args.role, args.windowed, args.solo, eye=args.eye,
-                     show_stats=args.stats, mode=args.mode)
+                     show_stats=args.stats)
         app.pacing = args.pacing
     except ValueError as e:
         sys.exit(str(e))

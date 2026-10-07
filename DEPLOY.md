@@ -5,17 +5,17 @@
 | File | Goes on | Purpose |
 |---|---|---|
 | `demoneye.py` | both Pis | the app (window, MQTT, loop, watchdog) |
-| `settings.py` `renderers.py` `directors.py` `stage.py` | both Pis | behaviour + rendering |
-| `eye_shaders.py` `stage_shaders.py` `glsl_common.py` `glutil.py` | both Pis | the shaders |
+| `settings.py` `renderers.py` `directors.py` | both Pis | behaviour + rendering |
+| `eye_shaders.py` `glsl_common.py` `glutil.py` | both Pis | the shaders |
 | `stats.py` | both Pis | `--stats` readout |
 | `ir_control.py` | Pis with an IR transmitter | projector power via `ir-ctl` |
 | `ha_status.py` | both Pis | status for Home Assistant (eyes and bridge) |
 | `config.ini` | both Pis | **per-Pi** settings — differs between them |
 | `requirements.txt` | both Pis | python deps |
 | `demoneye.service` | both Pis | autostart on boot |
-| `figures/` | both Pis (if using sprites) | sprite atlases |
 | `ha_bridge.py` `bridge.ini` `requirements-bridge.txt` `ha-bridge.service` | ONE machine only | mmWave tracking bridge |
-| `sprite_atlas.py` `track_test.py` `tests/` | anywhere | tools + tests |
+| `check_config.py` `deploy.sh` | your Mac | verify and ship to both Pis |
+| `sync_probe.py` `track_check.py` `track_test.py` `tests/` | anywhere | diagnostics + tests |
 | `homeassistant/` | Home Assistant (not the Pis) | dashboard card, automations, Node-RED flow; see its README |
 
 The simplest deployment is `git pull` on each Pi — every file above is in the
@@ -30,10 +30,9 @@ python3 check_config.py           # both Pis, read-only (eyes + tracking bridge)
 Checks each `config.ini` (unknown keys and typos, types and ranges, inline
 comments — which the app does **not** strip, so `mirror = true ; note` breaks
 startup), that the broker is reachable from each Pi, the IR setup, the
-installed service's role/mode/eye, and that `SDL_KMSDRM_DEVICE_INDEX` matches
-the HDMI card the projector is on. Then the pair: exactly one brain, same
-show, same broker and topics, `mirror` on one Pi at most, and non-overlapping
-stage spans. Exits non-zero on any error. `--file a.ini b.ini` checks local
+installed service's role/eye, and that `SDL_KMSDRM_DEVICE_INDEX` matches
+the HDMI card the projector is on. Then the pair: exactly one brain, the same
+eye, same broker and topics, and `mirror` on one Pi at most. Exits non-zero on any error. `--file a.ini b.ini` checks local
 copies without ssh (a `bridge.ini` is recognised and checked against the
 bridge's own keys).
 
@@ -56,7 +55,7 @@ From your Mac, in the project folder:
 
 It runs the test suite first and refuses to ship if anything fails. Each Pi's
 own `config.ini` / `bridge.ini` and its `venv` are never copied over or
-deleted, so per-Pi placement, `mirror` and stage spans survive every deploy.
+deleted, so per-Pi placement and `mirror` survive every deploy.
 Only changed files are sent. On the Pi that runs the tracking bridge, it
 restarts `ha-bridge` too so the new code takes effect.
 

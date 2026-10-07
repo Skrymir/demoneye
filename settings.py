@@ -51,25 +51,7 @@ STATUS_DISCOVERY_PREFIX = "homeassistant"
 STATUS_REFRESH_S = 30.0              # republish even when nothing changed
 STATUS_PROJECTOR_POLL_S = 5.0        # how often to read the HDMI (projector) state
 
-# --- Stage mode (--mode stage; config.ini [stage]) ---
-# The projectors become viewports onto ONE virtual stage wider than any window.
-# This Pi shows the slice of the stage between STAGE_FROM and STAGE_TO.
-STAGE_FROM = 0.0
-STAGE_TO = 0.4
-FIG_SCALE = 0.72        # figure height as a fraction of the window
-STAGE_SPEED = 0.085     # stage units per second
-STAGE_FREEZE_WHEN_WATCHED = False   # only move while nobody is detected
-FIGURE_FACES = "right"  # which way the SOURCE sprite frames face
-FIGURE_STRIDE = 0.075   # stage distance covered by ONE full walk cycle
-FIGURE_ATLAS = ""       # sprite atlas PNG (from sprite_atlas.py); selects the sprite shader
-
-# Spirit trails are drawn through a HISTORY of past positions (a velocity-based
-# trail can only ever be straight). Each renderer keeps its own history of the
-# smoothed position it displayed, so both Pis match with no extra streaming.
-SPIRIT_HIST_N = 8       # points per trail (N-1 segments)
-SPIRIT_HIST_DT = 0.055  # seconds between samples — sets the trail's length
-
-# --- Target tracking (brain only; eyes mode) ---
+# --- Target tracking (brain only) ---
 TARGET_HOLD = 2.0       # seconds to keep tracking after the last target update
 ALERT_DILATION = 0.20   # pupil while locked on (lower = more constricted)
 # How the eye reacts the moment it notices someone. Weights need not sum to 1.
@@ -127,11 +109,6 @@ def load_config(path):
                     "mirror_gaze": str(MIRROR_GAZE),
                     "gaze_scale": str(GAZE_SCALE_X), "gaze_scale_y": str(GAZE_SCALE_Y),
                     "render_height": str(RENDER_HEIGHT), "output_mode": OUTPUT_MODE},
-        "stage": {"stage_from": str(STAGE_FROM), "stage_to": str(STAGE_TO),
-                  "figure_scale": str(FIG_SCALE), "speed": str(STAGE_SPEED),
-                  "freeze_when_watched": str(STAGE_FREEZE_WHEN_WATCHED),
-                  "figure_atlas": FIGURE_ATLAS, "figure_faces": FIGURE_FACES,
-                  "figure_stride": str(FIGURE_STRIDE)},
         "control": {"start": START_MODE, "target_hold": str(TARGET_HOLD),
                     "track_look_down": str(TRACK_LOOK_DOWN),
                     "stale_after_s": str(STALE_AFTER_S),
@@ -163,18 +140,6 @@ def load_config(path):
     g["TRACK_LOOK_DOWN"] = cp.getfloat("control", "track_look_down")
     g["STALE_AFTER_S"] = cp.getfloat("control", "stale_after_s")
     g["DISPLAY_RETRY_S"] = cp.getfloat("control", "display_retry_s")
-
-    g["STAGE_FROM"] = cp.getfloat("stage", "stage_from")
-    g["STAGE_TO"] = cp.getfloat("stage", "stage_to")
-    g["FIG_SCALE"] = cp.getfloat("stage", "figure_scale")
-    g["STAGE_SPEED"] = cp.getfloat("stage", "speed")
-    g["STAGE_FREEZE_WHEN_WATCHED"] = cp.getboolean("stage", "freeze_when_watched")
-    g["FIGURE_FACES"] = cp.get("stage", "figure_faces").strip().lower()
-    g["FIGURE_STRIDE"] = cp.getfloat("stage", "figure_stride")
-    atlas = cp.get("stage", "figure_atlas").strip()
-    if atlas and not os.path.isabs(atlas):
-        atlas = os.path.join(os.path.dirname(os.path.abspath(path or ".")), atlas)
-    g["FIGURE_ATLAS"] = atlas
 
     g["IR_ENABLED"] = cp.getboolean("projector", "ir_enabled")
 

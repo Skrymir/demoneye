@@ -1,5 +1,24 @@
 # Changelog
 
+## Eyes only — 2026-10-07
+
+- **Stage mode removed.** The app now only draws the eyes; the stage figures
+  (silhouette, sprite, ghost, mansion ballroom, spirits) live on in the Godot
+  "haunted windows" project. Removed `stage.py`, `stage_shaders.py`,
+  `sprite_atlas.py`, `figures/`, `docs/STAGE.md`, the `[stage]` config section
+  and its settings, the stage-only GLSL helpers, the sprite-atlas loader and
+  the Pillow dependency.
+- `--mode` is gone; `--mode eyes` is still accepted so an older service line
+  keeps working. `--eye` now only offers `walker` (default), `demon`, `human`.
+- `check_config.py`: a leftover `[stage]` section in a Pi's own `config.ini` is
+  reported as "safe to delete" (the app ignores it); a service still running
+  `--mode stage` is an error. Pair check compares the eye only.
+- Home Assistant: the role entity no longer has a `mode` attribute (dashboard
+  card and README updated).
+- `deploy.sh` no longer requires the stage files; its `rsync --delete` removes
+  them from the Pis on the next deploy.
+- The three eyes render pixel-identically before and after (verified).
+
 ## Walker eye — 2026-10-07
 
 - **The walker is now the default eye** (`--eye walker`). Both services start
