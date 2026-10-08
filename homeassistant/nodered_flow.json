@@ -25,7 +25,13 @@
         "z": "eyes_tab",
         "name": "Set ON",
         "rules": [
-            { "t": "set", "p": "payload", "pt": "msg", "to": "on", "tot": "str" }
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "on",
+                "tot": "str"
+            }
         ],
         "action": "",
         "property": "",
@@ -34,7 +40,11 @@
         "reg": false,
         "x": 300,
         "y": 120,
-        "wires": [["eyes_command"]]
+        "wires": [
+            [
+                "eyes_command"
+            ]
+        ]
     },
     {
         "id": "set_off",
@@ -42,7 +52,13 @@
         "z": "eyes_tab",
         "name": "Set OFF",
         "rules": [
-            { "t": "set", "p": "payload", "pt": "msg", "to": "off", "tot": "str" }
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "off",
+                "tot": "str"
+            }
         ],
         "action": "",
         "property": "",
@@ -51,7 +67,11 @@
         "reg": false,
         "x": 300,
         "y": 200,
-        "wires": [["eyes_command"]]
+        "wires": [
+            [
+                "eyes_command"
+            ]
+        ]
     },
     {
         "id": "eyes_command",
@@ -65,5 +85,165 @@
         "x": 560,
         "y": 160,
         "wires": []
+    },
+    {
+        "id": "lights_comment",
+        "type": "comment",
+        "z": "eyes_tab",
+        "name": "Govee lights follow the show",
+        "info": "Listens to the same retained command the Pis use, so the lights change whether the show is switched by the schedule above or by hand from switch.halloween_eyes_show.\n\nOn  -> scene.govee_to_mqtt_one_click_leisure_blue_fire\nOff -> scene.govee_to_mqtt_one_click_leisure_night_mode\n\nBoth are Govee Tap-to-Runs synced into HA by govee2mqtt. To use different scene names, edit the two action nodes.\n\nThe filter ignores the first message after a deploy or restart (the retained one), so redeploying Node-RED at noon won't turn the lights on.",
+        "x": 190,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "lights_in",
+        "type": "mqtt in",
+        "z": "eyes_tab",
+        "name": "show command",
+        "topic": "halloween/eyes/command",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "eyes_broker",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 160,
+        "y": 340,
+        "wires": [
+            [
+                "lights_parse"
+            ]
+        ]
+    },
+    {
+        "id": "lights_parse",
+        "type": "function",
+        "z": "eyes_tab",
+        "name": "on / off",
+        "func": "// Same rules as the eyes (directors.py _parse_command), so the lights can\n// never disagree with the Pis about whether the show is on.\nconst ON = [\"on\", \"1\", \"true\", \"play\", \"start\", \"yes\", \"open\"];\nconst OFF = [\"off\", \"0\", \"false\", \"stop\", \"pause\", \"no\", \"close\"];\n\nlet v = msg.payload;\nif (Buffer.isBuffer(v)) v = v.toString();\nif (v !== null && typeof v === \"object\") {\n    v = v.state ?? \"\";\n} else {\n    v = String(v ?? \"\").trim().replace(/^\"|\"$/g, \"\");\n    if (v.startsWith(\"{\")) {\n        try { v = JSON.parse(v).state ?? \"\"; } catch (e) { return null; }\n    }\n}\nv = String(v).trim().toLowerCase();\n\nif (ON.includes(v)) msg.payload = \"on\";\nelse if (OFF.includes(v)) msg.payload = \"off\";\nelse return null;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 340,
+        "y": 340,
+        "wires": [
+            [
+                "lights_changed"
+            ]
+        ]
+    },
+    {
+        "id": "lights_changed",
+        "type": "rbe",
+        "z": "eyes_tab",
+        "name": "only on change",
+        "func": "rbei",
+        "gap": "",
+        "start": "",
+        "inout": "out",
+        "septopics": false,
+        "property": "payload",
+        "topi": "topic",
+        "x": 510,
+        "y": 340,
+        "wires": [
+            [
+                "lights_route"
+            ]
+        ]
+    },
+    {
+        "id": "lights_route",
+        "type": "switch",
+        "z": "eyes_tab",
+        "name": "show?",
+        "property": "payload",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "on",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "off",
+                "vt": "str"
+            }
+        ],
+        "checkall": "false",
+        "repair": false,
+        "outputs": 2,
+        "x": 670,
+        "y": 340,
+        "wires": [
+            [
+                "lights_blue_fire"
+            ],
+            [
+                "lights_nighttime"
+            ]
+        ]
+    },
+    {
+        "id": "lights_blue_fire",
+        "type": "api-call-service",
+        "z": "eyes_tab",
+        "name": "Blue fire",
+        "server": "",
+        "action": "scene.turn_on",
+        "domain": "scene",
+        "entityId": [
+            "scene.govee_to_mqtt_one_click_leisure_blue_fire"
+        ],
+        "areaId": [],
+        "deviceId": [],
+        "floorId": [],
+        "labelId": [],
+        "data": "",
+        "mergeContext": "",
+        "mustacheAltTags": false,
+        "outputProperties": [],
+        "queue": "none",
+        "blockInputOverrides": true,
+        "x": 880,
+        "y": 320,
+        "wires": [
+            []
+        ],
+        "version": 7
+    },
+    {
+        "id": "lights_nighttime",
+        "type": "api-call-service",
+        "z": "eyes_tab",
+        "name": "Nighttime",
+        "server": "",
+        "action": "scene.turn_on",
+        "domain": "scene",
+        "entityId": [
+            "scene.govee_to_mqtt_one_click_leisure_night_mode"
+        ],
+        "areaId": [],
+        "deviceId": [],
+        "floorId": [],
+        "labelId": [],
+        "data": "",
+        "mergeContext": "",
+        "mustacheAltTags": false,
+        "outputProperties": [],
+        "queue": "none",
+        "blockInputOverrides": true,
+        "x": 880,
+        "y": 360,
+        "wires": [
+            []
+        ],
+        "version": 7
     }
 ]

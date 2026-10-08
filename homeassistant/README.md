@@ -8,7 +8,7 @@ Nothing in this folder runs on the Pis (`deploy.sh` doesn't copy it).
 |---|---|---|
 | [dashboard_card.yaml](dashboard_card.yaml) | Status card: health summary, both eyes, tracking | Dashboard → + Add card → Manual |
 | [alert_automations.yaml](alert_automations.yaml) | Four alerts (projector, eye offline, bridge down, nobody tracked) | Settings → Automations |
-| [nodered_flow.json](nodered_flow.json) | Node-RED nodes that publish the show's on/off | Node-RED → Import |
+| [nodered_flow.json](nodered_flow.json) | Node-RED nodes that publish the show's on/off, and switch the Govee lights with it | Node-RED → Import |
 
 ## Show status
 
@@ -73,6 +73,42 @@ next scheduled change from Node-RED overrides a manual one.
 
 How the Pis behave before the first command (`start = idle` or `playing` in
 `config.ini`) is covered in [docs/OPERATIONS.md](../docs/OPERATIONS.md#remote-control-home-assistant).
+
+## Govee lights
+
+The Node-RED flow also switches the Govee lights with the show:
+
+| Show | Lights |
+|---|---|
+| **on** | `scene.govee_to_mqtt_one_click_leisure_blue_fire` |
+| **off** | `scene.govee_to_mqtt_one_click_leisure_night_mode` |
+
+Both are **Tap-to-Runs** in the Govee app ("Blue Fire", "Night Mode"), which
+**govee2mqtt** (Home Assistant add-on, on the Mosquitto broker at
+`192.168.86.5`) turns into Home Assistant scenes.
+
+The flow listens to `halloween/eyes/command`, the same message the Pis follow,
+so the lights change whether the show is switched by the schedule or by hand
+with `switch.halloween_eyes_show`. It accepts the same words as the eyes
+(`on`, `play`, `{"state": "ON"}` …). Only a *change* triggers it: the
+retained message that arrives when Node-RED restarts or you redeploy is
+ignored, so a midday redeploy won't turn the lights on.
+
+### Setup
+
+1. In Node-RED, import the flow (or just the new nodes), open the *Blue fire*
+   and *Nighttime* action nodes, pick your Home Assistant server, and Deploy.
+2. Test: flip `switch.halloween_eyes_show` on and off.
+
+### If a scene is missing or renamed
+
+- New or edited Tap-to-Runs don't appear until you press **Purge Caches** on
+  the *Govee to MQTT* device (Settings → Devices & services → MQTT), or
+  restart the add-on.
+- Tap-to-Runs need the Govee **email and password** in the add-on, not just
+  the API key.
+- The entity ID comes from the Tap-to-Run's name. If HA names it differently,
+  change the scene in the matching Node-RED action node.
 
 ## MQTT topics
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## Govee lights — 2026-10-07
+
+- **The Govee lights follow the show.** `homeassistant/nodered_flow.json`
+  now has a second chain: it listens to `halloween/eyes/command`, turns on
+  `scene.govee_to_mqtt_one_click_leisure_blue_fire` when the show starts and
+  `scene.govee_to_mqtt_one_click_leisure_night_mode` when it stops (Govee Tap-to-Runs
+  via govee2mqtt). Same on/off words as the eyes;
+  only changes trigger it, so a Node-RED restart doesn't repaint the lights.
+  Setup is in `homeassistant/README.md` → "Govee lights". No change on the Pis.
+
 ## Eyes only — 2026-10-07
 
 - **Stage mode removed.** The app now only draws the eyes; the stage figures
