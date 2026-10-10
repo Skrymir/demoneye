@@ -87,7 +87,8 @@ are in `settings.py`.
 `config.ini` and `bridge.ini` in this repo are templates: leave `username`,
 `password` and `token` blank here. On each Pi, put real values in root-only
 env files that the services load (`/etc/demoneye.env`: `MQTT_USER`,
-`MQTT_PASS`; `/etc/ha-bridge.env`: `HA_TOKEN`); see the comments in
+`MQTT_PASS`; `/etc/ha-bridge.env`: `HA_TOKEN`, plus `MQTT_USER`/`MQTT_PASS`
+if your broker needs a login); see the comments in
 `demoneye.service` and `ha-bridge.service`. `check_config.py` warns if a token
 is sitting in `bridge.ini`.
 

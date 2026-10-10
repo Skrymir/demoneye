@@ -94,3 +94,17 @@ def test_on_then_off_are_serialized(proj):
     b = threading.Thread(target=IR.power_off); b.start()
     a.join(); b.join()
     assert not p.on
+
+
+def test_wait_ignores_wall_clock_steps(monkeypatch):
+    """NTP stepping the clock forward mid-wait must not end the wait early:
+    that made the retry press POWER again and toggle a booting projector off."""
+    calls = {"n": 0}
+
+    def state():
+        calls["n"] += 1
+        return calls["n"] >= 3               # HDMI comes up on the 3rd check
+    real = time.time
+    monkeypatch.setattr(IR, "projector_state", state)
+    monkeypatch.setattr(time, "time", lambda: real() + 1000 * calls["n"])
+    assert IR._wait_for(True, 5) is not None

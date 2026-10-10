@@ -86,3 +86,35 @@ def test_follow_command_false_always_on():
     cfg = ha_bridge.Config(None)
     cfg.follow_command = False
     assert ha_bridge.Bridge(cfg).enabled
+
+
+def test_ha_dropping_releases_the_target():
+    """HA goes away mid-show: clear the target instead of letting the heartbeat
+    keep the eyes staring at the last point for the whole outage."""
+    b = make_bridge(start_enabled=True)
+    b.cfg.heartbeat = 0.02
+
+    async def dropping_session():
+        await asyncio.sleep(0.02)
+        raise ConnectionError("HA restarted")
+    b._session = dropping_session
+
+    async def scenario():
+        b.have, b.sx, b.sy = True, 0.4, 0.0  # someone is being tracked
+        task = asyncio.ensure_future(b.run())
+        await asyncio.sleep(0.2)              # drop, then back off; heartbeats tick
+        task.cancel()
+
+    asyncio.run(scenario())
+    assert not b.have
+    assert (b.cfg.topic, "clear") in b.client.published
+    after = b.client.published[b.client.published.index((b.cfg.topic, "clear")) + 1:]
+    assert not any(p != "clear" for _, p in after), "heartbeat kept re-sending the target"
+
+
+def test_mqtt_credentials_from_env(monkeypatch):
+    """/etc/ha-bridge.env can hold the broker login, so bridge.ini stays blank."""
+    monkeypatch.setenv("MQTT_USER", "eyes")
+    monkeypatch.setenv("MQTT_PASS", "s3cret")
+    cfg = ha_bridge.Config(None)
+    assert (cfg.mqtt_user, cfg.mqtt_pass) == ("eyes", "s3cret")

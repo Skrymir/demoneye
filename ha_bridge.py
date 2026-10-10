@@ -112,8 +112,10 @@ class Config:
 
         self.mqtt_host = cp.get("mqtt", "host")
         self.mqtt_port = cp.getint("mqtt", "port")
-        self.mqtt_user = cp.get("mqtt", "username")
-        self.mqtt_pass = cp.get("mqtt", "password")
+        # env first, like the eyes (settings.py): credentials live in
+        # /etc/ha-bridge.env, not in bridge.ini
+        self.mqtt_user = os.environ.get("MQTT_USER") or cp.get("mqtt", "username")
+        self.mqtt_pass = os.environ.get("MQTT_PASS") or cp.get("mqtt", "password")
         self.topic = cp.get("mqtt", "target_topic")
         self.command_topic = cp.get("mqtt", "command_topic")
         self.follow_command = cp.getboolean("mqtt", "follow_command")
@@ -276,10 +278,8 @@ class Bridge:
             return
         self.enabled = want
         print(f"[bridge] tracking {'enabled' if want else 'disabled'}", flush=True)
-        if not want and self.have:
-            self.have = False          # release any held target as we go quiet
-            self._publish_clear()
-            self._mark_seen(force=True)
+        if not want:
+            self._release_target()     # release any held target as we go quiet
         if self._loop is not None:     # paho thread -> wake the HA connection loop
             self._loop.call_soon_threadsafe(self._sync_events)
 
@@ -351,6 +351,14 @@ class Bridge:
 
     def _publish_clear(self):
         self.client.publish(self.cfg.topic, "clear", qos=0)
+
+    def _release_target(self):
+        """Drop any held target and tell the eyes, so the heartbeat stops
+        re-sending it."""
+        if self.have:
+            self.have = False
+            self._publish_clear()
+            self._mark_seen(force=True)
 
     def evaluate(self, force=False):
         """Recompute from the cache and publish (rate-limited)."""
@@ -463,6 +471,9 @@ class Bridge:
             went_off.cancel()
             e = session.exception()
             self.cache.clear()
+            # Without HA we can't tell if the target is still there; don't let
+            # the heartbeat keep the eyes staring at it for the whole outage.
+            self._release_target()
             if time.monotonic() - started > 60:
                 backoff = 1.0              # it was up a while: retry promptly
             print(f"[ha] disconnected: {e or 'closed by Home Assistant'} — "

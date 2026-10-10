@@ -57,3 +57,89 @@ def test_output_mode_parsing():
     assert output_size(" 1920 X 1080 ") == (1920, 1080)
     for native in ("native", "auto", "", "720p", "0x0", None):
         assert output_size(native) == (0, 0)
+
+
+def _free_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def test_eye_keeps_retrying_until_the_broker_appears(monkeypatch):
+    """Power cut: the Pi boots before the broker. The first connect fails, but
+    the eye must keep trying (not fall back to solo for the night) and reach
+    the broker once it's up."""
+    pytest.importorskip("pygame")
+    pytest.importorskip("OpenGL")
+    pytest.importorskip("paho.mqtt")
+    import threading
+    import time
+    import demoneye
+    port = _free_port()                       # nothing listening yet
+    monkeypatch.setattr(demoneye.S, "MQTT_HOST", "127.0.0.1")
+    monkeypatch.setattr(demoneye.S, "MQTT_PORT", port)
+    monkeypatch.setattr(demoneye.S, "STATUS_ENABLED", False)
+    failed = threading.Event()
+    app = object.__new__(demoneye.EyeApp)
+    app.role, app.status = "follower", None
+    app._on_connect_fail = lambda *a: failed.set()
+    app._setup_mqtt()
+    try:
+        assert app.client is not None, "gave up and went solo"
+        assert failed.wait(5), "never attempted to connect"
+        broker = socket.socket()
+        broker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        broker.bind(("127.0.0.1", port))
+        broker.listen(1)
+        broker.settimeout(10)
+        try:
+            conn, _ = broker.accept()         # the retry reaches the new broker
+            conn.close()
+        finally:
+            broker.close()
+    finally:
+        app.client.loop_stop()
+
+
+def test_follower_goes_dark_despite_clock_steps(monkeypatch):
+    """The watchdog runs on the monotonic clock: NTP stepping the wall clock
+    back after boot must not stop a silent follower going dark."""
+    pytest.importorskip("pygame")
+    pytest.importorskip("OpenGL")
+    import time
+    import types
+    import demoneye
+    monkeypatch.setattr(demoneye.S, "STALE_AFTER_S", 0.05)
+    app = object.__new__(demoneye.EyeApp)
+    app.solo, app.client, app.stale = False, object(), False
+    app.schema = {"x": 0.0}
+    app._on_message(None, None, types.SimpleNamespace(topic=demoneye.S.TOPIC, payload=b'{"x": 1}'))
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() - 3600)   # clock stepped back
+    time.sleep(0.1)                           # ...and the brain has gone quiet
+    app._watchdog()
+    assert app.stale
+
+
+def test_ctrl_c_takes_the_clean_exit_path():
+    """Ctrl-C stops the loop (so run() reaches _exit_now) instead of raising
+    out of it; a second Ctrl-C still force-quits."""
+    pytest.importorskip("pygame")
+    pytest.importorskip("OpenGL")
+    import os
+    import signal
+    import demoneye
+    saved = signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM)
+    app = object.__new__(demoneye.EyeApp)
+    app.running = True
+    try:
+        app._install_signal_handlers()
+        os.kill(os.getpid(), signal.SIGINT)   # handler runs here; must not raise
+        assert app.running is False
+        with pytest.raises(KeyboardInterrupt):
+            os.kill(os.getpid(), signal.SIGINT)
+    finally:
+        signal.signal(signal.SIGINT, saved[0])
+        signal.signal(signal.SIGTERM, saved[1])
