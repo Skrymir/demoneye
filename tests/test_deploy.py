@@ -50,7 +50,8 @@ def test_deploys_both_and_installs_bridge_requirements(fakes):
     assert r.returncode == 0, r.stdout + r.stderr
     assert "deployed to: pi-a pi-b" in r.stdout
     pip = [l for l in log.splitlines() if "pip install" in l]
-    assert len(pip) == 2 and all("requirements-bridge.txt" in l for l in pip)
+    assert len(pip) == 2 and all("requirements-bridge.txt" in l and "-c constraints.txt" in l
+                                 for l in pip)
 
 
 def test_pip_failure_skips_that_pi_but_not_the_rest(fakes):

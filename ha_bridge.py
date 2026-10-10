@@ -32,6 +32,7 @@ import os
 import signal
 import socket
 import sys
+import threading
 import time
 
 import websockets
@@ -175,6 +176,11 @@ class Bridge:
         self.sx = 0.0            # smoothed gaze x
         self.sy = 0.0
         self.have = False        # a target is currently present
+        # enabled/have/sx/sy are changed from paho's thread (on/off commands)
+        # and the asyncio thread (HA events, heartbeat). Without this an "off"
+        # could slip in between evaluate()'s enabled check and its publish,
+        # leaving a fresh target out after the clear.
+        self._lock = threading.RLock()
         self.last_pub = 0.0
         self.client = None
         # When follow_command is on, the bridge only publishes targets while the
@@ -246,6 +252,9 @@ class Bridge:
             gx = _clamp(-bearing / self.cfg.gaze_max)
             dist = math.hypot(wx, wy)          # mm from the eyes
         else:
+            # Simple mode works in the sensor's own units throughout (x_range_mm
+            # and y_near/far_mm are calibrated against raw readings; see
+            # "Units matter" in docs/TRACKING.md), so no sensor_unit_mm here.
             gx = _clamp((x_mm - self.cfg.x_offset) / self.cfg.x_range)
             dist = y_mm
         if self.cfg.invert_x:
@@ -274,12 +283,13 @@ class Bridge:
             except Exception:
                 return
         want = True if v in self.ON_WORDS else False if v in self.OFF_WORDS else None
-        if want is None or want == self.enabled:
-            return
-        self.enabled = want
-        print(f"[bridge] tracking {'enabled' if want else 'disabled'}", flush=True)
-        if not want:
-            self._release_target()     # release any held target as we go quiet
+        with self._lock:
+            if want is None or want == self.enabled:
+                return
+            self.enabled = want
+            print(f"[bridge] tracking {'enabled' if want else 'disabled'}", flush=True)
+            if not want:
+                self._release_target()     # release any held target as we go quiet
         if self._loop is not None:     # paho thread -> wake the HA connection loop
             self._loop.call_soon_threadsafe(self._sync_events)
 
@@ -292,6 +302,11 @@ class Bridge:
         self._setup_status()              # sets the last will, so before connect()
 
         def _on_connect(c, u, flags, rc, props):
+            if rc.is_failure:             # e.g. bad credentials: don't claim "online"
+                print(f"[mqtt] broker refused the connection: {rc} — check the MQTT "
+                      "username/password (/etc/ha-bridge.env)", flush=True)
+                return
+            print(f"[mqtt] connected rc={rc}", flush=True)
             set_nodelay(c)                # send each small target message immediately
             if self.cfg.follow_command:
                 c.subscribe(self.cfg.command_topic, qos=1)
@@ -300,7 +315,12 @@ class Bridge:
             if self.status:
                 self.status.on_connect()
         self.client.on_connect = _on_connect
-        self.client.connect(self.cfg.mqtt_host, self.cfg.mqtt_port, keepalive=30)
+        self.client.on_connect_fail = lambda c, u: print(
+            f"[mqtt] can't reach {self.cfg.mqtt_host}:{self.cfg.mqtt_port} — retrying", flush=True)
+        # Connect in the background and keep retrying, like the eyes: the
+        # broker may come up after this Pi does.
+        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
+        self.client.connect_async(self.cfg.mqtt_host, self.cfg.mqtt_port, keepalive=30)
         self.client.loop_start()
         if self.status:
             self.status.start()
@@ -355,38 +375,40 @@ class Bridge:
     def _release_target(self):
         """Drop any held target and tell the eyes, so the heartbeat stops
         re-sending it."""
-        if self.have:
-            self.have = False
-            self._publish_clear()
-            self._mark_seen(force=True)
+        with self._lock:
+            if self.have:
+                self.have = False
+                self._publish_clear()
+                self._mark_seen(force=True)
 
     def evaluate(self, force=False):
         """Recompute from the cache and publish (rate-limited)."""
-        if not self.enabled:
-            return
-        now = time.monotonic()
-        target = self.pick_target()
-        if target is None:
-            if self.have:                       # just lost the target
-                self.have = False
-                self._publish_clear()
-                self._mark_seen(force=True)     # the last moment someone was there
-                print("[tgt] cleared", flush=True)
-            return
-        gx, gy = self.normalize(*target)
-        if not self.have:                        # fresh acquisition: snap (no smoothing)
-            self.sx, self.sy = gx, gy
-            self.have = True
-            self._mark_seen(force=True)
-            print(f"[tgt] acquired  x={gx:+.2f} y={gy:+.2f}", flush=True)
-        else:
-            self._mark_seen()
-            a = self.cfg.smooth
-            self.sx += (gx - self.sx) * a
-            self.sy += (gy - self.sy) * a
-        if force or (now - self.last_pub) >= self.cfg.min_interval:
-            self._publish_target(self.sx, self.sy)
-            self.last_pub = now
+        with self._lock:
+            if not self.enabled:
+                return
+            now = time.monotonic()
+            target = self.pick_target()
+            if target is None:
+                if self.have:                       # just lost the target
+                    self.have = False
+                    self._publish_clear()
+                    self._mark_seen(force=True)     # the last moment someone was there
+                    print("[tgt] cleared", flush=True)
+                return
+            gx, gy = self.normalize(*target)
+            if not self.have:                        # fresh acquisition: snap (no smoothing)
+                self.sx, self.sy = gx, gy
+                self.have = True
+                self._mark_seen(force=True)
+                print(f"[tgt] acquired  x={gx:+.2f} y={gy:+.2f}", flush=True)
+            else:
+                self._mark_seen()
+                a = self.cfg.smooth
+                self.sx += (gx - self.sx) * a
+                self.sy += (gy - self.sy) * a
+            if force or (now - self.last_pub) >= self.cfg.min_interval:
+                self._publish_target(self.sx, self.sy)
+                self.last_pub = now
 
     # -- Home Assistant WebSocket --
     async def _session(self):
@@ -437,8 +459,9 @@ class Bridge:
         # keep a stationary target alive so the eye doesn't time out on it
         while True:
             await asyncio.sleep(self.cfg.heartbeat)
-            if self.enabled and self.have:
-                self._publish_target(self.sx, self.sy)
+            with self._lock:
+                if self.enabled and self.have:
+                    self._publish_target(self.sx, self.sy)
 
     async def run(self):
         self._loop = asyncio.get_running_loop()

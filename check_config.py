@@ -45,6 +45,13 @@ USER_NAME = "joshc"
 REMOTE_DIR = "demoneye"            # relative to the user's home on the Pi
 # ------------------------------------------------------------------------------
 
+import settings as _settings      # stdlib-only: just for the defaults below
+
+# What the eyes use for a [mqtt] key that config.ini leaves out.
+MQTT_DEFAULTS = {"host": _settings.MQTT_HOST, "port": _settings.MQTT_PORT,
+                 "topic": _settings.TOPIC, "command_topic": _settings.COMMAND_TOPIC,
+                 "target_topic": _settings.TARGET_TOPIC}
+
 # Every key the app reads (settings.py + ir_control.py), with its type and an
 # optional (low, high) range or set of allowed values.
 F, I, B, S = "float", "int", "bool", "str"
@@ -288,7 +295,13 @@ def parse_service(text):
             idx = int(m.group(1))
     args = shlex.split(exec_line) if exec_line else []
     def opt(name, default=None):
-        return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        # argparse takes both "--role brain" and "--role=brain"
+        for i, a in enumerate(args):
+            if a == name and i + 1 < len(args):
+                return args[i + 1]
+            if a.startswith(name + "="):
+                return a[len(name) + 1:]
+        return default
     return {"role": opt("--role"), "mode": opt("--mode"), "eye": opt("--eye", "walker"),
             "start": opt("--start"), "kms_index": idx, "found": bool(exec_line)}
 
@@ -621,12 +634,15 @@ def check_pair(pis):
     elif eyes:
         rep.ok(f"same eye on both ({next(iter(eyes.values()))})")
 
+    # compare what each Pi will actually use: a key left out means the default
+    def mq(cp, key):
+        return g(cp, "mqtt", key, I if key == "port" else S, MQTT_DEFAULTS[key])
     for key in ("host", "port", "topic", "command_topic", "target_topic"):
-        vals = {h: g(cp, "mqtt", key) for h, cp, _ in live}
+        vals = {h: mq(cp, key) for h, cp, _ in live}
         if len(set(vals.values())) > 1:
             rep.err(f"[mqtt] {key} differs: " + ", ".join(f"{h}={v}" for h, v in vals.items())
                     + " — they won't hear each other")
-    if all(len({g(cp, 'mqtt', k) for _, cp, _ in live}) == 1 for k in ("host", "port", "topic")):
+    if all(len({mq(cp, k) for _, cp, _ in live}) == 1 for k in ("host", "port", "topic")):
         rep.ok("same broker and topics")
 
     check_status_pair(rep, live, file_mode=all(svc is None for _, _, svc in live))

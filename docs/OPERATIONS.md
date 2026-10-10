@@ -52,7 +52,7 @@ brain is publishing (`python track_test.py monitor` shows the state stream).
 state resumes. You'll see `[sync] no state from the brain — going dark` in
 its journal.
 
-## 4. Run it on the projectors (KMSDRM, no desktop)
+## Run it on the projectors (KMSDRM, no desktop)
 
 For a decoration you just want to power on, boot each Pi to the console and let
 it draw straight to HDMI:
@@ -64,7 +64,7 @@ it draw straight to HDMI:
    sure your user can reach the GPU:
    ```bash
    sudo apt install -y libgles2 libegl1 libgbm1 libgl1-mesa-dri
-   sudo usermod -aG video,render pi
+   sudo usermod -aG video,render "$USER"
    ```
 3. Stop the screen from blanking: add `consoleblank=0` to the end of the single
    line in `/boot/firmware/cmdline.txt`, then reboot.
@@ -126,7 +126,7 @@ Now both eyes come up on boot and self-sync as soon as the brain connects.
 > **First-time GL check on a Pi** (do this before wiring up the service): from
 > the console, `EYE_GL=es ./venv/bin/python demoneye.py --role brain --solo`.
 > It prints a `[gl] OpenGL ES ... (GLES)` line and should show the eye on HDMI.
-> If it errors, paste me the output — the shaders and render path are validated,
+> If it errors, read the error first: the shaders and render path are validated,
 > so anything here is environment (a missing lib or a driver quirk), and the
 > fallback is to run under the desktop instead (same code, different display).
 
@@ -148,7 +148,8 @@ ssh -t joshc@pi-eye-right.home demoneye/test_pattern.sh
 ```
 
 It stops the eye service (asks for your sudo password: the sudoers rule only
-covers `restart`), shows the pattern on HDMI, and starts the service again when
+covers `restart`), shows the pattern on HDMI using the same
+`SDL_KMSDRM_DEVICE_INDEX` as the installed unit, and restarts the service when
 you press Ctrl+C. Options: `--color red|white|green|yellow`, `--invert`,
 `--no-grid`, `--no-eye`, `--seconds N`; `python3 test_pattern.py --png x.png`
 saves an image instead.
@@ -268,7 +269,7 @@ ssh joshc@pi-eye-right.home
 cd ~/demoneye && ./venv/bin/python sync_probe.py
 ```
 
-It reports the stream spacing (steady ~20 ms is good; "bunched" or a p95 of
+It reports the stream spacing (steady ~17 ms, i.e. 60 Hz, is good; "bunched" or a p95 of
 50+ ms is the problem), the round trip through the broker, ping, and Wi-Fi
 power saving and signal, then names the likely cause. Fix in this order:
 

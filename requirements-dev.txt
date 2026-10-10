@@ -1,6 +1,8 @@
 # Everything the test suite needs, eyes and bridge (CI and your Mac).
 # Not installed on the Pis.
+#   ./venv/bin/pip install -r requirements-dev.txt -c constraints.txt
 -r requirements.txt
 -r requirements-bridge.txt
-pytest>=8.0
-jinja2>=3.1          # test_status renders HA's templates
+pytest>=8.0,<10
+jinja2>=3.1,<4       # test_status renders HA's templates
+packaging>=23,<27    # test_requirements checks these files

@@ -8,7 +8,7 @@ show is playing (it only listens, so the show keeps running):
 
 It measures, from this Pi:
   1. the brain's state stream as it arrives here: rate, gaps and bunching
-     (steady ~20 ms spacing is good; clumps of 0 ms then 100 ms are bad)
+     (steady ~17 ms spacing, i.e. 60 Hz, is good; clumps of 0 ms then 100 ms are bad)
   2. round trip to the MQTT broker and back (MQTT RTT)
   3. plain network ping to the broker
   4. Wi-Fi: which interface, power saving, signal

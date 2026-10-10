@@ -118,3 +118,63 @@ def test_mqtt_credentials_from_env(monkeypatch):
     monkeypatch.setenv("MQTT_PASS", "s3cret")
     cfg = ha_bridge.Config(None)
     assert (cfg.mqtt_user, cfg.mqtt_pass) == ("eyes", "s3cret")
+
+
+def test_off_cannot_race_a_target_out_after_the_clear():
+    """'off' (paho thread) arriving while evaluate() (asyncio thread) is midway
+    must end with the eyes released: the last message is 'clear'."""
+    import time
+    b = make_bridge(start_enabled=True)
+    inside, release = threading.Event(), threading.Event()
+
+    def slow_pick():
+        inside.set()
+        release.wait(2)
+        return (100.0, 1500.0)
+    b.pick_target = slow_pick
+    ev = threading.Thread(target=b.evaluate, kwargs={"force": True})
+    ev.start()
+    assert inside.wait(2)
+    b.have = True                              # a target is already held
+    off = threading.Thread(target=b._on_command,
+                           args=(None, None, types.SimpleNamespace(payload=b"off")))
+    off.start()
+    time.sleep(0.1)                            # 'off' lands mid-evaluate
+    release.set()
+    ev.join(2); off.join(2)
+    assert b.client.published[-1] == (b.cfg.topic, "clear"), b.client.published
+    assert not b.have
+
+
+class _RecordingMqtt:
+    """Stands in for paho's Client: records calls, does nothing."""
+    def __init__(self, *a, **kw):
+        self.calls = []
+
+    def __getattr__(self, name):
+        def call(*a, **kw):
+            self.calls.append(name)
+            return types.SimpleNamespace(wait_for_publish=lambda timeout=None: True)
+        return call
+
+
+def _reason(name):
+    from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.reasoncodes import ReasonCode
+    return ReasonCode(PacketTypes.CONNACK, name)
+
+
+def test_bridge_connects_in_background_and_ignores_a_refused_connect(monkeypatch):
+    monkeypatch.setattr(ha_bridge.mqtt, "Client", _RecordingMqtt)
+    b = ha_bridge.Bridge(ha_bridge.Config(None))
+    b.status = None
+    monkeypatch.setattr(b, "_setup_status", lambda: None)
+    b._connect_mqtt()
+    c = b.client
+    assert "connect_async" in c.calls and "connect" not in c.calls, "a blocking connect"
+
+    c.calls.clear()
+    c.on_connect(c, None, None, _reason("Not authorized"), None)
+    assert "subscribe" not in c.calls, "subscribed on a refused connection"
+    c.on_connect(c, None, None, _reason("Success"), None)
+    assert "subscribe" in c.calls

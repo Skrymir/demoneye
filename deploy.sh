@@ -50,7 +50,7 @@ cd "$HERE"
 missing=()
 for f in demoneye.py settings.py renderers.py directors.py glsl_common.py \
          glutil.py eye_shaders.py ir_control.py ha_status.py requirements.txt \
-         requirements-bridge.txt tests; do
+         requirements-bridge.txt constraints.txt tests; do
   [ -e "$f" ] || missing+=("$f")
 done
 if [ ${#missing[@]} -gt 0 ]; then
@@ -68,13 +68,13 @@ if [ "$RUN_TESTS" = 1 ]; then
   PY="./venv/bin/python"; [ -x "$PY" ] || PY="python3"
   if ! "$PY" -c "import pytest" 2>/dev/null; then
     echo "!! pytest isn't installed, so the tests can't run — not deploying."
-    echo "   ${PY%python*}pip install -r requirements-dev.txt   (or --skip-tests to deploy anyway)"
+    echo "   ${PY%python*}pip install -r requirements-dev.txt -c constraints.txt   (or --skip-tests to deploy anyway)"
     exit 1
   fi
   echo "==> running tests"
   if ! DEMONEYE_NO_SKIPS=deps "$PY" -m pytest -q -rs tests; then
     echo "!! tests failed or couldn't all run — not deploying"
-    echo "   missing dependency?  ${PY%python*}pip install -r requirements-dev.txt"
+    echo "   missing dependency?  ${PY%python*}pip install -r requirements-dev.txt -c constraints.txt"
     echo "   (--skip-tests to deploy anyway)"
     exit 1
   fi
@@ -135,7 +135,7 @@ for host in "${TARGETS[@]}"; do
   # here must not abort the whole deploy: skip this Pi's restart, carry on.
   if ! ssh "$dest" "cd ${REMOTE_DIR} && \
       { [ -x venv/bin/python ] || python3 -m venv venv; } && \
-      ./venv/bin/pip install -q -r requirements.txt -r requirements-bridge.txt"; then
+      ./venv/bin/pip install -q -r requirements.txt -r requirements-bridge.txt -c constraints.txt"; then
     echo "!! installing requirements on ${host} failed — new code copied but NOT restarted"
     echo "   (no internet on the Pi? retry ./deploy.sh ${host} once it's back)"
     FAILED+=("$host"); continue

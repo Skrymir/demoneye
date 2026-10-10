@@ -28,7 +28,7 @@ PUBLISH_HZ = 60                     # brain streams state once per frame at 60 f
 START_MODE = "playing"
 
 # --- Follower watchdog ---
-# A follower that stops hearing from the brain fades to black after this many
+# A follower that stops hearing from the brain cuts to black after this many
 # seconds instead of freezing on its last frame all night. 0 disables it.
 STALE_AFTER_S = 2.0
 
@@ -153,6 +153,9 @@ def load_config(path):
     g["EYE_CENTER_X"] = cp.getfloat("display", "center_x")
     g["EYE_CENTER_Y"] = cp.getfloat("display", "center_y")
     g["EYE_SCALE"] = cp.getfloat("display", "scale")
+    if not (0.0 < EYE_SCALE < float("inf")):  # 0 = divide by zero in every shader
+        print(f"[config] [display] scale = {EYE_SCALE} is invalid — using 1.0", flush=True)
+        g["EYE_SCALE"] = 1.0
     g["MIRROR"] = cp.getboolean("display", "mirror")
     g["MIRROR_GAZE"] = cp.getboolean("display", "mirror_gaze")
     g["GAZE_SCALE_X"] = cp.getfloat("display", "gaze_scale")

@@ -170,3 +170,30 @@ def test_follower_ignores_non_finite_state():
     assert app.net == {"gx": 0.3, "gy": 0.1}
     assert app.last_state_at > 0
     assert all(math.isfinite(v) for v in app.disp.values())
+
+
+def test_eye_ignores_a_refused_connect():
+    """Bad credentials: CONNACK says no. Don't subscribe or claim 'online'."""
+    pytest.importorskip("pygame")
+    pytest.importorskip("OpenGL")
+    pytest.importorskip("paho.mqtt")
+    from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.reasoncodes import ReasonCode
+    import demoneye
+
+    class Client:
+        def __init__(self):
+            self.subs = []
+
+        def subscribe(self, topic, qos=0):
+            self.subs.append(topic)
+
+        def socket(self):
+            return None
+    app = object.__new__(demoneye.EyeApp)
+    app.role, app.status = "brain", None
+    c = Client()
+    app._on_connect(c, None, None, ReasonCode(PacketTypes.CONNACK, "Not authorized"), None)
+    assert c.subs == []
+    app._on_connect(c, None, None, ReasonCode(PacketTypes.CONNACK, "Success"), None)
+    assert demoneye.S.COMMAND_TOPIC in c.subs

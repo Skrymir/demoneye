@@ -304,6 +304,10 @@ class EyeApp:
         }
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
+        if reason_code.is_failure:        # e.g. bad credentials: don't claim "online"
+            print(f"[mqtt] broker refused the connection: {reason_code} — check "
+                  "MQTT_USER/MQTT_PASS (/etc/demoneye.env)", flush=True)
+            return
         print(f"[mqtt] connected rc={reason_code}", flush=True)
         set_nodelay(client)
         client.subscribe(S.COMMAND_TOPIC, qos=1)     # both roles listen for on/off
@@ -433,7 +437,7 @@ class EyeApp:
         os._exit(0)
 
     def _watchdog(self):
-        """A follower that has stopped hearing from the brain fades to black
+        """A follower that has stopped hearing from the brain cuts to black
         instead of freezing on its last frame for the rest of the night."""
         if self.solo or S.STALE_AFTER_S <= 0 or not self.client:
             return
