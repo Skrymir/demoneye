@@ -121,3 +121,25 @@ def test_follower_goes_dark_despite_clock_steps(monkeypatch):
     time.sleep(0.1)                           # ...and the brain has gone quiet
     app._watchdog()
     assert app.stale
+
+
+def test_ctrl_c_takes_the_clean_exit_path():
+    """Ctrl-C stops the loop (so run() reaches _exit_now) instead of raising
+    out of it; a second Ctrl-C still force-quits."""
+    pytest.importorskip("pygame")
+    pytest.importorskip("OpenGL")
+    import os
+    import signal
+    import demoneye
+    saved = signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM)
+    app = object.__new__(demoneye.EyeApp)
+    app.running = True
+    try:
+        app._install_signal_handlers()
+        os.kill(os.getpid(), signal.SIGINT)   # handler runs here; must not raise
+        assert app.running is False
+        with pytest.raises(KeyboardInterrupt):
+            os.kill(os.getpid(), signal.SIGINT)
+    finally:
+        signal.signal(signal.SIGINT, saved[0])
+        signal.signal(signal.SIGTERM, saved[1])

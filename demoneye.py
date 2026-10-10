@@ -118,7 +118,7 @@ class EyeApp:
         # playback gate: solo has no controller so always plays; otherwise start
         # per START_MODE and let MQTT commands toggle it.
         self.active = True if solo else (S.START_MODE == "playing")
-        signal.signal(signal.SIGTERM, lambda *_: self.stop())
+        self._install_signal_handlers()
 
         # Network BEFORE the display. If the projector is off its HDMI port
         # reads as disconnected and there's no display to open yet; with MQTT
@@ -496,6 +496,19 @@ class EyeApp:
 
     def stop(self):
         self.running = False
+
+    def _install_signal_handlers(self):
+        # systemctl stop (SIGTERM) and Ctrl-C (SIGINT) take the same clean path:
+        # finish the frame, then _exit_now() (HA status offline, MQTT
+        # disconnect, no SDL teardown). A second Ctrl-C force-quits if that hangs.
+        signal.signal(signal.SIGTERM, lambda *_: self.stop())
+        signal.signal(signal.SIGINT, self._on_sigint)
+
+    def _on_sigint(self, *_):
+        if not self.running:
+            raise KeyboardInterrupt
+        print("\n[exit] stopping (Ctrl-C again to force)", flush=True)
+        self.stop()
 
 
 def main():
