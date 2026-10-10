@@ -79,10 +79,10 @@ and the Govee scenes all keep working.
 
 | Topic | Payload | Notes |
 |---|---|---|
-| `halloween/eyes/command` | `on` / `off`, retained, QoS 1 | Also accepts `1/0`, `true/false`, `play/stop`… or `{"state": "ON"}`. Start the show on `on`, go black on `off`. It's retained, so read it on connect. |
-| `halloween/eyes/target` | `{"x": -0.42, "y": 0.0, "hold": 2.0}` or `clear` | `x`: −1 = screen-left .. +1 = screen-right, as the audience sees the picture. In the reference, world x = `x × SPAN`. `hold`: seconds to keep it without an update. The bridge re-sends every 0.75 s while someone is there and sends `clear` when they go (or when the show turns off or HA drops). |
-| `halloween/eyes/state` | demoneye's own brain→follower stream | Don't publish here: it's the eyes' topic. Use your own topic if the Godot side needs a brain/follower split, e.g. `halloween/windows/state`. |
-| `halloween/eyes/status/<node>/…` | HA discovery status | Optional. If Godot should show up in HA, publish its own node the same way (see demoneye's `ha_status.py`). |
+| `house/show/command` | `on` / `off`, retained, QoS 1 | Also accepts `1/0`, `true/false`, `play/stop`… or `{"state": "ON"}`. Start the show on `on`, go black on `off`. It's retained, so read it on connect. |
+| `house/tracking/target` | `{"x": -0.42, "y": 0.0, "hold": 2.0}` or `clear` | `x`: −1 = screen-left .. +1 = screen-right, as the audience sees the picture. In the reference, world x = `x × SPAN`. `hold`: seconds to keep it without an update. The bridge re-sends every 0.75 s while someone is there and sends `clear` when they go (or when the show turns off or HA drops). |
+| `house/eyes/state` | demoneye's own brain→follower stream | Don't publish here: it's the eyes' topic. Use your own topic if the Godot side needs a brain/follower split, e.g. `house/windows/state`. |
+| `house/status/<node>/…` | HA discovery status | Optional. If Godot should show up in HA, publish its own node the same way (see demoneye's `ha_status.py`). |
 
 Only **one** bridge may run (they share an MQTT client ID). Today it runs on
 `pi-eye-right`.
