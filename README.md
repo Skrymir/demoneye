@@ -65,9 +65,13 @@ Adding an eye is one shader body in `eye_shaders.py`.
 ## Tests
 
 ```bash
-./venv/bin/pip install pytest
+./venv/bin/pip install -r requirements-dev.txt
 ./venv/bin/python -m pytest -q tests
 ```
+
+GitHub Actions runs the same suite on every push and pull request
+(`.github/workflows/tests.yml`), on Linux with Mesa's EGL so the
+draw-a-frame tests run too. There, any skipped test fails the run.
 
 Every eye shader is compiled for both the Pi's GLSL ES 3.00 and desktop 3.30
 (that catches reserved-name bugs the Pi tolerates and the Mac doesn't), the
