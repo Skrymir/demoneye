@@ -8,3 +8,14 @@ __pycache__/
 *.log
 frames/
 frames_*/
+
+# --- Secrets: never commit these (the repo is public) ---
+# Tokens and passwords go in /etc/demoneye.env and /etc/ha-bridge.env on each
+# Pi (see demoneye.service / ha-bridge.service), not in config.ini/bridge.ini.
+.env
+*.env
+secrets/
+# per-machine copies of the config with real values
+*.local.ini
+config.*.ini
+bridge.*.ini

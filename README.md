@@ -81,3 +81,12 @@ touched by code updates: broker, eye placement (`center_x/y`, `scale`,
 `mirror`, `gaze_scale`), HDMI output mode, tracking tilt, projector IR, and the
 follower watchdog (`stale_after_s`). Defaults and documentation for every key
 are in `settings.py`.
+
+### Credentials
+
+`config.ini` and `bridge.ini` in this repo are templates: leave `username`,
+`password` and `token` blank here. On each Pi, put real values in root-only
+env files that the services load (`/etc/demoneye.env`: `MQTT_USER`,
+`MQTT_PASS`; `/etc/ha-bridge.env`: `HA_TOKEN`); see the comments in
+`demoneye.service` and `ha-bridge.service`. `check_config.py` warns if a token
+is sitting in `bridge.ini`.
