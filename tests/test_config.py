@@ -24,3 +24,13 @@ def test_leftover_stage_section_is_ignored(tmp_path):
     S.load_config(str(cfg))
     assert S.EYE_SCALE == 1.2
     S.load_config("config.ini")   # restore for other tests
+
+
+def test_invalid_scale_falls_back(tmp_path):
+    """scale = 0 would divide by zero in every shader (eye renders garbage)."""
+    for bad in ("0", "-1", "inf", "nan"):
+        cfg = tmp_path / "c.ini"
+        cfg.write_text(f"[display]\nscale = {bad}\n")
+        S.load_config(str(cfg))
+        assert S.EYE_SCALE == 1.0, bad
+    S.load_config("config.ini")   # restore for other tests

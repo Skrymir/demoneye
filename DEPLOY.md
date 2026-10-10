@@ -18,8 +18,9 @@
 | `sync_probe.py` `track_check.py` `track_test.py` `tests/` | anywhere | diagnostics + tests |
 | `homeassistant/` | Home Assistant (not the Pis) | dashboard card, automations, Node-RED flow; see its README |
 
-The simplest deployment is `git pull` on each Pi — every file above is in the
-repo except each Pi's own `config.ini` values (see `.gitignore`).
+Ship code with `./deploy.sh` (below); it never touches a Pi's own `config.ini` /
+`bridge.ini`. `git pull` on a Pi works too, but those two files are tracked
+templates, so a Pi with its own values in them gets merge conflicts.
 
 ## Check both Pis' settings: `check_config.py`
 
@@ -55,7 +56,7 @@ From your Mac, in the project folder:
 
 It runs the test suite first and refuses to ship if anything fails, if pytest
 isn't installed, or if a test was skipped because a dependency is missing
-(`./venv/bin/pip install -r requirements-dev.txt` once on the Mac). Each Pi's
+(`./venv/bin/pip install -r requirements-dev.txt -c constraints.txt` once on the Mac). Each Pi's
 own `config.ini` / `bridge.ini` and its `venv` are never copied over or
 deleted, so per-Pi placement and `mirror` survive every deploy. Backups
 (`config.ini.bak`, `*.bak`, `*~`) are left alone too. Anything else in
@@ -91,7 +92,7 @@ sudo apt install -y v4l-utils
 # 2. Files + venv
 mkdir -p ~/demoneye && cd ~/demoneye       # copy the files here
 python3 -m venv venv
-./venv/bin/pip install -r requirements.txt
+./venv/bin/pip install -r requirements.txt -c constraints.txt
 
 # 3. Smoke test (no MQTT, straight to HDMI)
 EYE_GL=es ./venv/bin/python demoneye.py --role brain --solo --eye walker --stats

@@ -94,6 +94,27 @@ def journal(unit, since):
         return []
 
 
+def parse_since(s, now=None):
+    """--since as a datetime. Takes what journalctl takes for the same window:
+    'YYYY-MM-DD HH:MM[:SS]', 'YYYY-MM-DD', 'today', 'yesterday', or '-2h' / '-30m'
+    / '-1d'. Raises ValueError otherwise."""
+    now = now or dt.datetime.now()
+    s = s.strip()
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if s in ("today", "yesterday"):
+        return midnight - dt.timedelta(days=1 if s == "yesterday" else 0)
+    m = re.fullmatch(r"-(\d+)\s*([smhd])", s)
+    if m:
+        unit = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}[m.group(2)]
+        return now - dt.timedelta(**{unit: int(m.group(1))})
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(s, fmt)
+        except ValueError:
+            pass
+    raise ValueError(f"can't read --since {s!r}: use 'YYYY-MM-DD HH:MM', 'yesterday' or '-2h'")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     yday = (dt.datetime.now() - dt.timedelta(days=1)).strftime("%Y-%m-%d 17:00")
@@ -106,7 +127,10 @@ def main():
     load_token_env()
     import ha_bridge  # noqa: E402  (after HA_TOKEN is in the environment)
     cfg = ha_bridge.Config(a.config)
-    since_dt = dt.datetime.strptime(a.since, "%Y-%m-%d %H:%M")
+    try:
+        since_dt = parse_since(a.since)
+    except ValueError as e:
+        ap.error(str(e))
 
     print(f"\nChecking tracking since {a.since} (local time) on {socket.gethostname()}")
 
@@ -262,17 +286,31 @@ def main():
             urllib.request.urlopen(req, timeout=10).read()
 
         t0 = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        walk_err = None
         try:
             post(ye, 1500)
             for x in (-200, -120, -40, 40, 120, 200):
                 post(xe, x)
                 time.sleep(0.7)
+        except (OSError, ValueError) as e:      # urllib's errors are OSErrors
+            walk_err = e
         finally:
-            post(xe, 0)
-            post(ye, 0)
-        time.sleep(3)                     # let the bridge hold/clear and log
-        got = [l for l in journal("ha-bridge", t0) if re.search(r"\[tgt\]", l)]
-        if any("acquired" in l for l in got):
+            for ent in (xe, ye):                # put them back, even after an error
+                try:
+                    post(ent, 0)
+                except (OSError, ValueError) as e:
+                    say(BAD, f"couldn't reset {ent} to 0 ({e}) — the radar will on its next update")
+        if walk_err is not None:
+            say(BAD, f"couldn't post the fake person to Home Assistant: {walk_err}")
+            find("Simulated walk-by failed to write to HA: check the token and that the "
+                 f"entities exist ({xe}, {ye}).")
+            got = None
+        else:
+            time.sleep(3)                     # let the bridge hold/clear and log
+            got = [l for l in journal("ha-bridge", t0) if re.search(r"\[tgt\]", l)]
+        if got is None:
+            pass
+        elif any("acquired" in l for l in got):
             say(OK, "the bridge acquired the fake person and published targets")
             for l in got[-3:]:
                 print("       " + re.sub(r"^\S+\s+\S+\s+", "", l)[:120])

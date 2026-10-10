@@ -84,7 +84,7 @@ the sensor's per-target X/Y coordinates (LD2450-based, up to 3 targets — an S1
 is fine.
 
 Setup:
-1. Deps: `./venv/bin/pip install -r requirements-bridge.txt`
+1. Deps: `./venv/bin/pip install -r requirements-bridge.txt -c constraints.txt`
 2. In HA, make a **Long-Lived Access Token** (your profile → Security). Put it
    in the `HA_TOKEN` environment variable (or `bridge.ini`, less secure).
 3. In HA → Developer Tools → States, search `target` and copy your device's
@@ -183,7 +183,9 @@ Notes:
 > where ~250 gave a full sweep across a room at 10ft; an EP Pro reporting raw
 > millimetres wants ~3000. If the eye barely moves off centre, lower it; if it
 > pins at the edges, raise it. `python track_test.py monitor` shows the live
-> values while you walk.
+> values while you walk. Without `geometry`, the same goes for `y_near_mm` /
+> `y_far_mm` (they're compared with the raw target Y); with `geometry = true`
+> everything is converted with `sensor_unit_mm` and really is millimetres.
 
 ### Sensor away from the eyes (`geometry = true`)
 

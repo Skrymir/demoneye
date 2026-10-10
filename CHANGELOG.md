@@ -1,5 +1,51 @@
 # Changelog
 
+## Code review fixes — 2026-10-10
+
+Reliability (PRs #1, #4):
+- **Eyes and bridge retry the broker** in the background instead of giving up
+  if it wasn't up at boot (`connect_async`). A refused connection (bad
+  credentials) is logged and no longer reported as "online".
+- **Thread races fixed:** a target cleared mid-frame could crash the brain;
+  an "off" landing mid-update could leave a target out after the clear.
+- **Bridge clears the target when Home Assistant drops**, instead of
+  re-sending the last point for the whole outage.
+- **Monotonic clocks** for the IR power wait, follower watchdog and target
+  deadlines: NTP stepping the clock after boot could toggle a booting
+  projector back off.
+- **NaN/Infinity on MQTT** is rejected (it used to stick in the follower until
+  restart); a target `hold` is capped at 30 s. `scale` <= 0 in `config.ini`
+  falls back to 1.0.
+- **Status thread** survives publish errors and retries a failed snapshot.
+- **Ctrl-C** exits cleanly like `systemctl stop`; a second Ctrl-C force-quits.
+
+Deploying (PRs #1, #4):
+- `deploy.sh`: one Pi failing `pip install` no longer aborts the rest; installs
+  the bridge's requirements; won't ship without pytest or with tests skipped
+  for a missing dependency; keeps `*.bak`, `config.ini.*` and `local/` on the
+  Pis and never ships `.env` / `secrets/`.
+- **Pinned dependencies:** ranges below the next major in `requirements*.txt`,
+  exact versions in the new `constraints.txt`, which CI and `deploy.sh` install
+  from. `requirements-dev.txt` for the Mac and CI.
+- Credentials: `/etc/demoneye.env` is loaded by the unit; the bridge reads
+  `MQTT_USER`/`MQTT_PASS` from `/etc/ha-bridge.env`.
+
+Tools and docs:
+- **CI** (PR #2): GitHub Actions runs the suite on Linux with Mesa EGL, so the
+  GL draw tests run too; any skip fails the run.
+- **Eye logs** (PR #3): `journalctl -t demoneye -f`. `-u demoneye` never showed
+  the app's output (logind moves the process into a session scope).
+- `check_config.py`: understands `--role=brain`; a `[mqtt]` key left out
+  equals the same key set to its default.
+- `test_pattern.sh`: uses the installed unit's KMSDRM index, restarts the eye
+  with the password-free `restart`, reports a failed pattern.
+- `track_check.py`: `--since` takes `yesterday`, `-2h`, dates with seconds;
+  a failed `--simulate` post no longer crashes it.
+- Docs: simple-mode units for `y_near_mm`/`y_far_mm`, 60 Hz sync spacing,
+  and other corrections. Status `version` is now `2026.10.10`.
+
+On the Pis: add `SyslogIdentifier=demoneye` to the installed unit (done on both).
+
 ## Projector alignment pattern — 2026-10-10
 
 - **`test_pattern.sh` / `test_pattern.py`**: a full-screen alignment pattern

@@ -1,0 +1,18 @@
+# Exact versions: what CI tests against and what deploy.sh installs on the
+# Pis (both pass -c constraints.txt), so the Pis run exactly what was tested.
+# To upgrade a package: change it here, run the tests, deploy.
+#
+# --- runtime (shipped to the Pis) ---
+numpy==2.5.3
+paho-mqtt==2.1.0
+pygame-ce==2.5.8
+PyOpenGL==3.1.10
+websockets==17.2
+# --- test-only (CI and your Mac) ---
+iniconfig==2.3.1
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.21.0
+pytest==9.1.1

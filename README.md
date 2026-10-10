@@ -12,7 +12,7 @@ stays in step.
 ## Quick start (on your Mac)
 
 ```bash
-python3.13 -m venv venv && ./venv/bin/pip install -r requirements.txt
+python3.13 -m venv venv && ./venv/bin/pip install -r requirements-dev.txt -c constraints.txt
 ./venv/bin/python demoneye.py --role brain --solo --windowed
 ./venv/bin/python demoneye.py --role brain --solo --windowed --eye demon
 ```
@@ -65,7 +65,7 @@ Adding an eye is one shader body in `eye_shaders.py`.
 ## Tests
 
 ```bash
-./venv/bin/pip install -r requirements-dev.txt
+./venv/bin/pip install -r requirements-dev.txt -c constraints.txt
 ./venv/bin/python -m pytest -q tests
 ```
 

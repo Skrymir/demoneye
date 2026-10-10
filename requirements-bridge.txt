@@ -1,2 +1,4 @@
-websockets>=12.0
-paho-mqtt>=2.0
+# The tracking bridge (ha_bridge.py). See requirements.txt for the ranges;
+# websockets changes its API between majors, hence the tight bound.
+websockets>=12.0,<18
+paho-mqtt>=2.0,<3

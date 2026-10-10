@@ -31,7 +31,7 @@ import socket
 import threading
 import time
 
-VERSION = "2026.10.06"
+VERSION = "2026.10.10"
 
 STATUS_DEFAULTS = {
     "enabled": "true",
