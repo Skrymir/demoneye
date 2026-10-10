@@ -3,7 +3,7 @@
 ## Following people/cars (target tracking)
 
 The eye can track a real target. Publish a normalized position on `target_topic`
-(default `halloween/eyes/target`) and the eye **snaps to it, follows it, and
+(default `house/tracking/target`) and the eye **snaps to it, follows it, and
 narrows its pupil** in a focused stare; when updates stop for `target_hold`
 seconds it drifts back to idle wandering. Only the **brain** subscribes — the
 tracking rides the normal state stream, so both eyes track together for free.
@@ -24,9 +24,9 @@ past the house, that's `x` sweeping −1→+1.
 
 Quick test by hand (watch the eye whip over and follow):
 ```bash
-mosquitto_pub -t halloween/eyes/target -m '{"x":-0.9,"y":0}'
-mosquitto_pub -t halloween/eyes/target -m '{"x":0.9,"y":0}'
-mosquitto_pub -t halloween/eyes/target -m 'clear'
+mosquitto_pub -t house/tracking/target -m '{"x":-0.9,"y":0}'
+mosquitto_pub -t house/tracking/target -m '{"x":0.9,"y":0}'
+mosquitto_pub -t house/tracking/target -m 'clear'
 ```
 
 ### Testing tracking without a sensor (`track_test.py`)
@@ -103,7 +103,7 @@ show is running — one Home Assistant message controls the eyes, the projectors
 and the bridge together. In `bridge.ini`:
 
 ```ini
-command_topic = halloween/eyes/command
+command_topic = house/show/command
 ; false = always publish
 follow_command = true
 ; quiet until a command arrives

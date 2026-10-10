@@ -116,8 +116,8 @@ BRIDGE_SCHEMA = {
     },
 }
 BRIDGE_DEFAULTS = {"follow_command": True, "start_enabled": False, "heartbeat_s": 0.75,
-                   "hold_s": 2.0, "target_topic": "halloween/eyes/target",
-                   "command_topic": "halloween/eyes/command", "host": "192.168.86.5",
+                   "hold_s": 2.0, "target_topic": "house/tracking/target",
+                   "command_topic": "house/show/command", "host": "192.168.86.5",
                    "port": "1883", "url": "ws://homeassistant.local:8123/api/websocket"}
 
 # Sections left over from features that were removed: reported as "safe to
@@ -595,7 +595,7 @@ def check_status_pair(rep, live, file_mode=False):
     if off:
         rep.warn(f"[status] enabled = false on {', '.join(off)} — that eye won't show up in "
                  "Home Assistant")
-    bases = {h: g(cp, "status", "base_topic") or "halloween/eyes/status" for h, cp, _ in live}
+    bases = {h: g(cp, "status", "base_topic") or "house/status" for h, cp, _ in live}
     if len(set(bases.values())) > 1:
         rep.warn("[status] base_topic differs: " + ", ".join(f"{h}={v}" for h, v in bases.items()))
     if file_mode:

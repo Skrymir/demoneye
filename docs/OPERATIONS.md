@@ -175,7 +175,7 @@ values in use are printed along the bottom.
 
 The app can render on start, or boot **idle** (black) and wait to be turned on.
 Either way it always listens on `command_topic` (default
-`halloween/eyes/command`), so Home Assistant can start/stop the whole pair with
+`house/show/command`), so Home Assistant can start/stop the whole pair with
 one message — both Pis subscribe.
 
 Set the boot behaviour per Pi in `config.ini`:
