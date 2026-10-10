@@ -78,6 +78,9 @@ class Config:
                 "y_from_distance": "false", "y_near_mm": "500", "y_far_mm": "4000",
                 "smooth_factor": "0.6", "publish_hz": "20", "heartbeat_s": "0.75",
                 "hold_s": "2.0",
+                "geometry": "false", "sensor_unit_mm": "1",
+                "sensor_x_mm": "0", "sensor_y_mm": "0", "sensor_yaw_deg": "0",
+                "sensor_flip_x": "false", "gaze_max_deg": "60",
             },
             "status": dict(ha_status.STATUS_DEFAULTS, node="bridge", refresh_s="60",
                            last_seen_every_s="10"),
@@ -122,6 +125,15 @@ class Config:
         self.y_from_distance = cp.getboolean("calibration", "y_from_distance")
         self.y_near = cp.getfloat("calibration", "y_near_mm")
         self.y_far = cp.getfloat("calibration", "y_far_mm")
+        # Sensor placement (geometry = true): where the sensor sits relative to
+        # the eyes and how it is turned, so targets become real look angles.
+        self.geometry = cp.getboolean("calibration", "geometry")
+        self.unit_mm = cp.getfloat("calibration", "sensor_unit_mm")
+        self.sensor_x = cp.getfloat("calibration", "sensor_x_mm")
+        self.sensor_y = cp.getfloat("calibration", "sensor_y_mm")
+        self.yaw = math.radians(cp.getfloat("calibration", "sensor_yaw_deg"))
+        self.flip_x = cp.getboolean("calibration", "sensor_flip_x")
+        self.gaze_max = max(1.0, cp.getfloat("calibration", "gaze_max_deg"))
         self.smooth = min(1.0, max(0.01, cp.getfloat("calibration", "smooth_factor")))
         self.min_interval = 1.0 / max(1.0, cp.getfloat("calibration", "publish_hz"))
         self.heartbeat = cp.getfloat("calibration", "heartbeat_s")
@@ -205,13 +217,40 @@ class Bridge:
                 best = (x, y)
         return best
 
+    def to_world(self, x, y):
+        """Sensor reading -> (X, Y) in mm relative to the eyes.
+
+        World frame, seen from above, standing at the house facing the street:
+        origin = the house wall midway between the two projected eyes,
+        +X = to your right, +Y = straight out toward the street.
+        The sensor sits at (sensor_x_mm, sensor_y_mm) and is turned
+        sensor_yaw_deg to the LEFT (counter-clockwise) of straight out.
+        Its own frame: x = to its right, y = straight ahead of it.
+        """
+        c = self.cfg
+        u = x * c.unit_mm * (-1.0 if c.flip_x else 1.0)
+        v = y * c.unit_mm
+        cos_t, sin_t = math.cos(c.yaw), math.sin(c.yaw)
+        return (c.sensor_x + u * cos_t - v * sin_t,
+                c.sensor_y + u * sin_t + v * cos_t)
+
     def normalize(self, x_mm, y_mm):
-        gx = _clamp((x_mm - self.cfg.x_offset) / self.cfg.x_range)
+        if self.cfg.geometry:
+            wx, wy = self.to_world(x_mm, y_mm)
+            # Bearing from the eyes: 0 = straight out, + = toward world +X.
+            # The eyes face the street, so their right is the audience's left:
+            # a target at +X needs the pupil toward screen-left (negative).
+            bearing = math.degrees(math.atan2(wx, max(wy, 1.0)))
+            gx = _clamp(-bearing / self.cfg.gaze_max)
+            dist = math.hypot(wx, wy)          # mm from the eyes
+        else:
+            gx = _clamp((x_mm - self.cfg.x_offset) / self.cfg.x_range)
+            dist = y_mm
         if self.cfg.invert_x:
             gx = -gx
         if self.cfg.y_from_distance and self.cfg.y_far != self.cfg.y_near:
             # closer target -> eye looks further "down" (-1); far -> level (0)
-            frac = (self.cfg.y_far - y_mm) / (self.cfg.y_far - self.cfg.y_near)
+            frac = (self.cfg.y_far - dist) / (self.cfg.y_far - self.cfg.y_near)
             gy = -_clamp(frac, 0.0, 1.0)
         else:
             gy = 0.0

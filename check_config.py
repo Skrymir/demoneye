@@ -94,7 +94,11 @@ BRIDGE_SCHEMA = {
     },
     "calibration": {
         "x_range_mm": (F, (50, 8000)), "x_offset_mm": (F, (-4000, 4000)), "invert_x": (B, None),
-        "y_from_distance": (B, None), "y_near_mm": (F, (0, 8000)), "y_far_mm": (F, (0, 8000)),
+        "y_from_distance": (B, None), "y_near_mm": (F, (0, 30000)), "y_far_mm": (F, (0, 30000)),
+        "geometry": (B, None), "sensor_unit_mm": (F, (0.01, 1000)),
+        "sensor_x_mm": (F, (-50000, 50000)), "sensor_y_mm": (F, (-50000, 50000)),
+        "sensor_yaw_deg": (F, (-180, 180)), "sensor_flip_x": (B, None),
+        "gaze_max_deg": (F, (5, 90)),
         "smooth_factor": (F, (0.01, 1.0)), "publish_hz": (F, (1, 60)),
         "heartbeat_s": (F, (0.1, 10)), "hold_s": (F, (0.1, 30)),
     },

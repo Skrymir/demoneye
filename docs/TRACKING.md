@@ -184,3 +184,33 @@ Notes:
 > millimetres wants ~3000. If the eye barely moves off centre, lower it; if it
 > pins at the edges, raise it. `python track_test.py monitor` shows the live
 > values while you walk.
+
+### Sensor away from the eyes (`geometry = true`)
+
+If the sensor is mounted somewhere other than at the eyes (say, at the side
+of the driveway, turned to cover the street), set `geometry = true` in
+`bridge.ini` `[calibration]` and describe where it is. Picture it from above,
+standing at the house facing the street: origin = the house wall midway between
+the two eyes, +X = your right, +Y = straight out toward the street.
+
+For each target the sensor reports `(x, y)` (x = to its right, y = ahead):
+
+```
+u = x * sensor_unit_mm      (negated if sensor_flip_x)
+v = y * sensor_unit_mm
+X = sensor_x_mm + u*cos(yaw) - v*sin(yaw)      yaw = sensor_yaw_deg, + = turned left
+Y = sensor_y_mm + u*sin(yaw) + v*cos(yaw)
+bearing = atan2(X, Y)                           angle from the eyes, + = to the right
+gaze x  = -bearing / gaze_max_deg               clamped to -1..+1, flipped by invert_x
+```
+
+The minus on the last line is because the eyes face the street: a target to
+the house's right is on the audience's left, so the pupil moves screen-left.
+`x_range_mm` / `x_offset_mm` are ignored in this mode, and `y_from_distance`
+uses the distance from the eyes (`hypot(X, Y)`) instead of the sensor's own.
+
+Calibrate: (1) stand 2 m in front of the sensor, read target Y in HA, and set
+`sensor_unit_mm = 2000 / reading`; (2) stand to the sensor's right, and if X
+reads negative set `sensor_flip_x = true`; (3) walk the street with the show on
+and set `invert_x` if the eyes look away from you. Tested in
+`tests/test_bridge_geometry.py`.
