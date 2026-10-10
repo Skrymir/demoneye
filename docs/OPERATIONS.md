@@ -137,6 +137,39 @@ Now both eyes come up on boot and self-sync as soon as the brain connects.
 
 ---
 
+## Lining up the two projectors (`test_pattern.sh`)
+
+A fixed alignment pattern to get both projectors to the same size, height and
+squareness on the house. Run it on each Pi (from the Mac, two terminals):
+
+```bash
+ssh -t joshc@pi-eye-left.home  demoneye/test_pattern.sh
+ssh -t joshc@pi-eye-right.home demoneye/test_pattern.sh
+```
+
+It stops the eye service (asks for your sudo password: the sudoers rule only
+covers `restart`), shows the pattern on HDMI, and starts the service again when
+you press Ctrl+C. Options: `--color red|white|green|yellow`, `--invert`,
+`--no-grid`, `--no-eye`, `--seconds N`; `python3 test_pattern.py --png x.png`
+saves an image instead.
+
+**1. Projectors first** (zoom, tilt, keystone), using the parts fixed to the picture:
+
+- **Border / corner brackets**: a rectangle on the wall, not a trapezoid.
+- **Corner circles**: round and all the same size.
+- **Horizon ruler** (ticks in % of picture width): measure from the left "10%"
+  to the right "10%" on each house wall and zoom until both projectors give
+  the same distance. Equal grid squares mean the same thing.
+- **Horizon line**: level, and at the same height on both (sight across, or use
+  a laser level).
+
+**2. Then the eye, in `config.ini`.** The thick circle, dashed lid shape (the
+walker eye at rest) and X are where this Pi's `[display]` `center_x`,
+`center_y` and `scale` put the eye. Edit `config.ini` on the Pi in another SSH
+window and the outline moves within half a second, so you can nudge each eye
+onto its spot and match the two sizes without touching the projectors. The
+values in use are printed along the bottom.
+
 ## Remote control (Home Assistant)
 
 The app can render on start, or boot **idle** (black) and wait to be turned on.

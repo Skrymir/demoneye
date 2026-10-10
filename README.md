@@ -56,6 +56,7 @@ stats.py         --stats readout
 check_config.py  verify both Pis' settings from the Mac   deploy.sh  ship to both Pis
 sync_probe.py    measure eye-sync latency on a Pi          track_check.py  diagnose tracking
 track_test.py    simulate targets       tests/           pytest suite
+test_pattern.py  projector alignment pattern (run with test_pattern.sh on a Pi)
 homeassistant/   HA dashboard card, automations, Node-RED flow (not deployed to the Pis)
 ```
 

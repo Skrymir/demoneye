@@ -1,5 +1,15 @@
 # Changelog
 
+## Projector alignment pattern — 2026-10-10
+
+- **`test_pattern.sh` / `test_pattern.py`**: a full-screen alignment pattern
+  (border, corner circles, % ruler, grid, LEFT/RIGHT label from the hostname)
+  for matching the two projectors' size, height and keystone. It also draws
+  the walker eye's outline where `config.ini` `[display]` puts it and follows
+  edits to that file live. The wrapper stops the eye service and restarts it
+  on exit. Docs: `docs/OPERATIONS.md` "Lining up the two projectors".
+  Tests: `tests/test_alignment_pattern.py`. No config changes.
+
 ## Govee lights — 2026-10-07
 
 - **The Govee lights follow the show.** `homeassistant/nodered_flow.json`
