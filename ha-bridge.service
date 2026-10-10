@@ -4,15 +4,17 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# The HA token belongs in a root-only env file, not bridge.ini:
+# Secrets belong in a root-only env file, not bridge.ini or this unit file
+# (the repo is public):
 #   sudo install -m 600 /dev/null /etc/ha-bridge.env
 #   echo 'HA_TOKEN=...' | sudo tee -a /etc/ha-bridge.env
+# and, if your broker needs a login:
+#   echo 'MQTT_USER=...' | sudo tee -a /etc/ha-bridge.env
+#   echo 'MQTT_PASS=...' | sudo tee -a /etc/ha-bridge.env
 EnvironmentFile=-/etc/ha-bridge.env
 Type=simple
 User=joshc
 WorkingDirectory=/home/joshc/demoneye
-# Keep the HA token out of bridge.ini by setting it here instead (recommended):
-# Environment=HA_TOKEN=your-long-lived-token
 ExecStart=/home/joshc/demoneye/venv/bin/python /home/joshc/demoneye/ha_bridge.py
 Restart=on-failure
 RestartSec=3

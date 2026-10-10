@@ -112,8 +112,10 @@ class Config:
 
         self.mqtt_host = cp.get("mqtt", "host")
         self.mqtt_port = cp.getint("mqtt", "port")
-        self.mqtt_user = cp.get("mqtt", "username")
-        self.mqtt_pass = cp.get("mqtt", "password")
+        # env first, like the eyes (settings.py): credentials live in
+        # /etc/ha-bridge.env, not in bridge.ini
+        self.mqtt_user = os.environ.get("MQTT_USER") or cp.get("mqtt", "username")
+        self.mqtt_pass = os.environ.get("MQTT_PASS") or cp.get("mqtt", "password")
         self.topic = cp.get("mqtt", "target_topic")
         self.command_topic = cp.get("mqtt", "command_topic")
         self.follow_command = cp.getboolean("mqtt", "follow_command")

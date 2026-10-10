@@ -9,7 +9,7 @@
 # What it does, per Pi:
 #   1. copies the project with rsync (only changed files are sent)
 #   2. NEVER touches that Pi's own config.ini / bridge.ini or its venv
-#   3. installs any new Python requirements
+#   3. installs any new Python requirements (the eyes' and the bridge's)
 #   4. restarts the demoneye service and shows its first log lines
 #   5. restarts the tracking bridge too, on whichever Pi runs it
 #
@@ -49,7 +49,8 @@ cd "$HERE"
 # make the Pis match it, removing newer files there.
 missing=()
 for f in demoneye.py settings.py renderers.py directors.py glsl_common.py \
-         glutil.py eye_shaders.py ir_control.py ha_status.py requirements.txt tests; do
+         glutil.py eye_shaders.py ir_control.py ha_status.py requirements.txt \
+         requirements-bridge.txt tests; do
   [ -e "$f" ] || missing+=("$f")
 done
 if [ ${#missing[@]} -gt 0 ]; then
@@ -113,11 +114,18 @@ for host in "${TARGETS[@]}"; do
   changed=$(echo "$out" | grep -v '^\.' || true)
   if [ -n "$changed" ]; then echo "$changed" | sed 's/^/   /'; else echo "   (no file changes)"; fi
 
-  # first deploy to a fresh Pi: create the venv and a config.ini to edit
-  ssh "$dest" "cd ${REMOTE_DIR} && \
-    { [ -x venv/bin/python ] || python3 -m venv venv; } && \
-    ./venv/bin/pip install -q -r requirements.txt && \
-    { [ -f config.ini ] || echo '   !! no config.ini on this Pi yet — copy one over and edit it'; }"
+  # create the venv on a fresh Pi, then install requirements (the bridge's
+  # too: it runs on one of the Pis and deploy restarts it below). A failure
+  # here must not abort the whole deploy: skip this Pi's restart, carry on.
+  if ! ssh "$dest" "cd ${REMOTE_DIR} && \
+      { [ -x venv/bin/python ] || python3 -m venv venv; } && \
+      ./venv/bin/pip install -q -r requirements.txt -r requirements-bridge.txt"; then
+    echo "!! installing requirements on ${host} failed — new code copied but NOT restarted"
+    echo "   (no internet on the Pi? retry ./deploy.sh ${host} once it's back)"
+    FAILED+=("$host"); continue
+  fi
+  ssh "$dest" "[ -f ${REMOTE_DIR}/config.ini ]" ||
+    echo "   !! no config.ini on this Pi yet — copy one over and edit it"
 
   # 3. restart
   if [ "$RESTART" = 1 ]; then

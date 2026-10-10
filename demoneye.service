@@ -39,8 +39,9 @@ TTYVHangup=yes
 # Credentials: keep them OUT of config.ini. Put them in a root-only file
 #   sudo install -m 600 /dev/null /etc/demoneye.env
 #   echo 'MQTT_USER=...' | sudo tee -a /etc/demoneye.env
-# and uncomment:
-#EnvironmentFile=-/etc/demoneye.env
+#   echo 'MQTT_PASS=...' | sudo tee -a /etc/demoneye.env
+# (the leading "-" means it's fine for the file not to exist)
+EnvironmentFile=-/etc/demoneye.env
 
 # >>> Change --role to "brain" on ONE Pi and "follower" on the other <<<
 # Which eye (the SAME on both Pis): --eye walker (default) | demon | human
