@@ -54,7 +54,7 @@ def main():
     secs = float(sys.argv[1]) if len(sys.argv) > 1 else 15.0
     S.load_config(os.path.join(HERE, "config.ini"))
     host = socket.gethostname()
-    probe_topic = f"halloween/eyes/probe/{host}"
+    probe_topic = f"house/eyes/probe/{host}"
 
     arrivals, rtts = [], []
     lock = threading.Lock()

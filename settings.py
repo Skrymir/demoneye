@@ -16,9 +16,9 @@ MQTT_HOST = "192.168.86.5"          # your broker (Home Assistant / Mosquitto)
 MQTT_PORT = 1883
 MQTT_USER = ""
 MQTT_PASS = ""
-TOPIC = "halloween/eyes/state"
-COMMAND_TOPIC = "halloween/eyes/command"   # Home Assistant publishes on/off here
-TARGET_TOPIC = "halloween/eyes/target"     # a sensor bridge publishes look-here targets
+TOPIC = "house/eyes/state"
+COMMAND_TOPIC = "house/show/command"   # Home Assistant publishes on/off here
+TARGET_TOPIC = "house/tracking/target"     # a sensor bridge publishes look-here targets
 PUBLISH_HZ = 60                     # brain streams state once per frame at 60 fps
 
 # --- Playback control ---
@@ -46,7 +46,7 @@ IR_ENABLED = False
 # state) plus discovery configs, so its entities appear in HA by themselves.
 STATUS_ENABLED = True
 STATUS_NODE = "auto"                 # auto = left/right from the hostname
-STATUS_BASE_TOPIC = "halloween/eyes/status"
+STATUS_BASE_TOPIC = "house/status"
 STATUS_DISCOVERY_PREFIX = "homeassistant"
 STATUS_REFRESH_S = 30.0              # republish even when nothing changed
 STATUS_PROJECTOR_POLL_S = 5.0        # how often to read the HDMI (projector) state

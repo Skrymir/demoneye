@@ -6,9 +6,9 @@ Each eye process and the tracking bridge publish a small retained JSON status
 message plus Home Assistant MQTT-discovery configs, so their entities appear in
 HA on their own (grouped under one device per node) with nothing to install.
 
-    halloween/eyes/status/<node>/availability   online | offline   (retained, LWT)
-    halloween/eyes/status/<node>/state          JSON snapshot      (retained)
-    halloween/eyes/status/bridge/last_seen      ISO timestamp      (retained)
+    house/status/<node>/availability   online | offline   (retained, LWT)
+    house/status/<node>/state          JSON snapshot      (retained)
+    house/status/bridge/last_seen      ISO timestamp      (retained)
     homeassistant/<component>/demoneye_<node>_<thing>/config       (retained)
 
 <node> is "left" / "right" for the eyes (from the hostname unless config.ini
@@ -36,7 +36,7 @@ VERSION = "2026.10.10"
 STATUS_DEFAULTS = {
     "enabled": "true",
     "node": "auto",
-    "base_topic": "halloween/eyes/status",
+    "base_topic": "house/status",
     "discovery_prefix": "homeassistant",
     "refresh_s": "30",
     "projector_poll_s": "5",
@@ -108,7 +108,7 @@ def _entity(prefix, component, uid, cfg):
     return f"{prefix}/{component}/{uid}/config", dict(cfg, unique_id=uid)
 
 
-def eye_discovery(node, base="halloween/eyes/status", prefix="homeassistant",
+def eye_discovery(node, base="house/status", prefix="homeassistant",
                   command_topic=None):
     """Discovery configs for one eye. With command_topic (the brain passes it)
     also a 'Show' switch that publishes on/off there, like Node-RED does."""
@@ -165,7 +165,7 @@ def eye_discovery(node, base="halloween/eyes/status", prefix="homeassistant",
     return out
 
 
-def bridge_discovery(node="bridge", base="halloween/eyes/status", prefix="homeassistant"):
+def bridge_discovery(node="bridge", base="house/status", prefix="homeassistant"):
     t = topics(base, node)
     dev = _device(node, "Demon Eye Tracking Bridge", "mmWave tracking bridge")
     avail = {"availability_topic": t["availability"]}
@@ -238,7 +238,7 @@ class StatusPublisher:
         on clean exit:  sp.go_offline()  (before loop_stop / disconnect)
     """
 
-    def __init__(self, client, node, discovery, snapshot_fn, base="halloween/eyes/status",
+    def __init__(self, client, node, discovery, snapshot_fn, base="house/status",
                  prefix="homeassistant", refresh_s=30.0, tick_s=1.0, clock=time.monotonic):
         self.client = client
         self.node = node

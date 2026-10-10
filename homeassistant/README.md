@@ -59,7 +59,7 @@ under Settings → Entities, or fix the ID in the card YAML.
 
 ## Turning the show on and off
 
-Everything follows one retained (QoS 1) message on `halloween/eyes/command`:
+Everything follows one retained (QoS 1) message on `house/show/command`:
 `on` / `off` (also `play`/`stop`, `1`/`0`, or JSON `{"state": "ON"}`). Both
 Pis, the projectors (over IR) and the tracking bridge react to it together,
 and a Pi that reboots mid-evening picks up the current state at once.
@@ -87,7 +87,7 @@ Both are **Tap-to-Runs** in the Govee app ("Blue Fire", "Night Mode"), which
 **govee2mqtt** (Home Assistant add-on, on the Mosquitto broker at
 `192.168.86.5`) turns into Home Assistant scenes.
 
-The flow listens to `halloween/eyes/command`, the same message the Pis follow,
+The flow listens to `house/show/command`, the same message the Pis follow,
 so the lights change whether the show is switched by the schedule or by hand
 with `switch.halloween_eyes_show`. It accepts the same words as the eyes
 (`on`, `play`, `{"state": "ON"}` …). Only a *change* triggers it: the
@@ -113,22 +113,22 @@ ignored, so a midday redeploy won't turn the lights on.
 ## MQTT topics
 
 ```
-halloween/eyes/status/<node>/availability   online | offline   retained; LWT = offline
-halloween/eyes/status/<node>/state          JSON               retained
-halloween/eyes/status/bridge/last_seen      ISO-8601 UTC       retained, never cleared
+house/status/<node>/availability   online | offline   retained; LWT = offline
+house/status/<node>/state          JSON               retained
+house/status/bridge/last_seen      ISO-8601 UTC       retained, never cleared
 homeassistant/<component>/demoneye_<node>_<thing>/config     retained discovery
 ```
 
 `<node>` is `left`, `right` or `bridge`. State is published within a second of
 a change plus a refresh every 30 s (eyes) / 60 s (bridge). It never goes at
-frame rate, and the 60 Hz gaze stream stays on `halloween/eyes/state`. When HA
+frame rate, and the 60 Hz gaze stream stays on `house/eyes/state`. When HA
 restarts (its `homeassistant/status` birth message), every node resends its
 discovery and state.
 
 Watch it live from any machine with the Mosquitto clients:
 
 ```bash
-mosquitto_sub -h 192.168.86.5 -v -t 'halloween/eyes/status/#'
+mosquitto_sub -h 192.168.86.5 -v -t 'house/status/#'
 ```
 
 Example eye state:
@@ -147,7 +147,7 @@ to change something.
 |---|---|---|
 | `enabled` | `true` | `false` stops all status/discovery publishing from that process |
 | `node` | `auto` (eyes) / `bridge` | Eyes: `auto` = `left`/`right` from the hostname. The two Pis must differ (`check_config.py` errors if not) |
-| `base_topic` | `halloween/eyes/status` | Same on every node |
+| `base_topic` | `house/status` | Same on every node |
 | `discovery_prefix` | `homeassistant` | Match HA's MQTT integration setting |
 | `refresh_s` | `30` / `60` | Republish interval when nothing changes |
 | `projector_poll_s` | `5` | Eyes only: how often the HDMI state is read |

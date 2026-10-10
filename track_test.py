@@ -32,9 +32,9 @@ def load_cfg(path):
     cp = configparser.ConfigParser()
     cp.read_dict({"mqtt": {
         "host": "127.0.0.1", "port": "1883", "username": "", "password": "",
-        "topic": "halloween/eyes/state",
-        "command_topic": "halloween/eyes/command",
-        "target_topic": "halloween/eyes/target",
+        "topic": "house/eyes/state",
+        "command_topic": "house/show/command",
+        "target_topic": "house/tracking/target",
     }})
     if path and os.path.exists(path):
         cp.read(path)

@@ -71,8 +71,8 @@ class Config:
                 "active_pattern": "",
             },
             "mqtt": {"host": "192.168.86.5", "port": "1883", "username": "", "password": "",
-                     "target_topic": "halloween/eyes/target",
-                     "command_topic": "halloween/eyes/command",
+                     "target_topic": "house/tracking/target",
+                     "command_topic": "house/show/command",
                      "follow_command": "true", "start_enabled": "false"},
             "calibration": {
                 "x_range_mm": "250", "x_offset_mm": "0", "invert_x": "false",

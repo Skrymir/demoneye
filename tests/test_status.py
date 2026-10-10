@@ -88,7 +88,7 @@ def test_eye_discovery_entities():
         assert cfg["device"]["identifiers"] == ["demoneye_left"]
         assert "object_id" not in cfg                         # deprecated in HA
         if cfg["name"] != "Running":                          # running IS the availability
-            assert cfg["availability_topic"] == "halloween/eyes/status/left/availability"
+            assert cfg["availability_topic"] == "house/status/left/availability"
     run = d["homeassistant/binary_sensor/demoneye_left_running/config"]
     assert "availability_topic" not in run                    # shows Off, not Unavailable
     assert run["state_topic"].endswith("/left/availability")
@@ -96,9 +96,9 @@ def test_eye_discovery_entities():
 
 def test_only_brain_gets_show_switch():
     assert not any("/switch/" in t for t in H.eye_discovery("right"))
-    d = H.eye_discovery("left", command_topic="halloween/eyes/command")
+    d = H.eye_discovery("left", command_topic="house/show/command")
     sw = d["homeassistant/switch/demoneye_show/config"]
-    assert sw["command_topic"] == sw["state_topic"] == "halloween/eyes/command"
+    assert sw["command_topic"] == sw["state_topic"] == "house/show/command"
     assert sw["retain"] is True and sw["qos"] == 1
     assert sw["default_entity_id"] == "switch.halloween_eyes_show"
 
@@ -111,7 +111,7 @@ def test_bridge_discovery_entities():
                    "binary_sensor.eye_bridge_ha_connected"}
     seen = d["homeassistant/sensor/demoneye_bridge_last_target_seen/config"]
     assert seen["device_class"] == "timestamp"
-    assert seen["state_topic"] == "halloween/eyes/status/bridge/last_seen"
+    assert seen["state_topic"] == "house/status/bridge/last_seen"
     assert "availability_topic" not in seen                   # survives the bridge going down
 
 
@@ -162,7 +162,7 @@ def make_pub(snap, refresh=30):
 
 def test_last_will_is_retained_offline():
     c, _, _ = make_pub({"show": "idle"})
-    assert c.will == ("halloween/eyes/status/left/availability", "offline", 1, True)
+    assert c.will == ("house/status/left/availability", "offline", 1, True)
 
 
 def test_on_connect_publishes_discovery_online_and_state_retained():
@@ -170,8 +170,8 @@ def test_on_connect_publishes_discovery_online_and_state_retained():
     p.on_connect()
     topics = [t for t, *_ in c.published]
     assert sum(t.startswith("homeassistant/") for t in topics) == 4
-    assert c.last("halloween/eyes/status/left/availability") == "online"
-    assert json.loads(c.last("halloween/eyes/status/left/state")) == {"show": "idle"}
+    assert c.last("house/status/left/availability") == "online"
+    assert json.loads(c.last("house/status/left/state")) == {"show": "idle"}
     assert all(retain for *_, retain in c.published)
     assert "homeassistant/status" in c.subs
 
@@ -198,7 +198,7 @@ def test_ha_birth_message_republishes_discovery():
 def test_go_offline():
     c, _, p = make_pub({"show": "idle"})
     p.go_offline()
-    assert c.published[-1] == ("halloween/eyes/status/left/availability", "offline", 1, True)
+    assert c.published[-1] == ("house/status/left/availability", "offline", 1, True)
 
 
 def test_snapshot_error_never_raises():
@@ -212,7 +212,7 @@ def test_settings_status_defaults_and_override(tmp_path):
     import settings as S
     S.load_config(str(tmp_path / "missing.ini"))
     assert S.STATUS_ENABLED is True and S.STATUS_NODE == "auto"
-    assert S.STATUS_BASE_TOPIC == "halloween/eyes/status"
+    assert S.STATUS_BASE_TOPIC == "house/status"
     cfg = tmp_path / "c.ini"
     cfg.write_text("[status]\nenabled = false\nnode = porch\nbase_topic = a/b/\nrefresh_s = 45\n")
     S.load_config(str(cfg))
@@ -265,7 +265,7 @@ def test_bridge_status_config_defaults():
 
 def test_bridge_snapshot_and_last_seen(monkeypatch):
     b = _bridge()
-    seen_topic = "halloween/eyes/status/bridge/last_seen"
+    seen_topic = "house/status/bridge/last_seen"
     assert b.status_snapshot()["tracking"] is False
     t0 = b.cfg.targets[0]
     b.cache = {t0["x"]: "120", t0["y"]: "1500"}
@@ -289,7 +289,7 @@ def test_bridge_close_publishes_offline():
     b.client.loop_stop = lambda: None
     b.client.disconnect = lambda: None
     b.close()
-    assert ("halloween/eyes/status/bridge/availability", "offline", 1, True) in b.client.published
+    assert ("house/status/bridge/availability", "offline", 1, True) in b.client.published
 
 
 class FlakyClient(FakeClient):

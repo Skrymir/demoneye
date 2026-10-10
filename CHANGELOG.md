@@ -1,5 +1,23 @@
 # Changelog
 
+## Project-neutral MQTT topics — 2026-10-10
+
+The topics are shared with the Christmas/Godot windows now, so they no longer
+say Halloween or eyes where they aren't eye-specific:
+
+| Was | Now |
+|---|---|
+| `halloween/eyes/command` | `house/show/command` |
+| `halloween/eyes/target` | `house/tracking/target` |
+| `halloween/eyes/status/<node>/…` | `house/status/<node>/…` |
+| `halloween/eyes/state` | `house/eyes/state` |
+
+Code defaults, the `config.ini` / `bridge.ini` templates, the Node-RED flow and
+the docs are updated; `tests/test_topics.py` keeps every copy in agreement.
+Home Assistant entities keep their IDs (discovery is re-published with the new
+topics). **Node-RED: change the two `halloween/eyes/command` nodes to
+`house/show/command`** (or re-import the flow).
+
 ## Code review fixes — 2026-10-10
 
 Reliability (PRs #1, #4):
