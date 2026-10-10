@@ -534,7 +534,8 @@ def main():
     # older service line with --mode eyes keeps working.
     ap.add_argument("--mode", choices=["eyes"], default="eyes", help=argparse.SUPPRESS)
     ap.add_argument("--eye", default="walker", choices=EYE_FIGURES,
-                    help="which eye to draw (default walker)")
+                    help="which eye to draw (default walker), or 'christmas' for "
+                         "snow and Santa's sleigh")
     ap.add_argument("--windowed", action="store_true", help="run in a window (testing)")
     ap.add_argument("--solo", action="store_true", help="no MQTT (single-machine test)")
     ap.add_argument("--config", default=default_cfg, help="path to config.ini")

@@ -6,7 +6,9 @@ import pytest
 from glsl_common import assemble, VERT
 from eye_shaders import EYE_SHADERS
 
-ALL = dict(EYE_SHADERS)
+from christmas import CHRISTMAS_FRAG
+
+ALL = dict(EYE_SHADERS, christmas=CHRISTMAS_FRAG)
 glslang = shutil.which("glslangValidator")
 
 

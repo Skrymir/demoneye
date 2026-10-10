@@ -18,7 +18,8 @@ import settings as S
 import directors
 from eye_shaders import EYE_SHADERS
 
-EYE_FIGURES = sorted(EYE_SHADERS)
+# The eyes, plus the Christmas scene (christmas.py), which reuses this plumbing.
+EYE_FIGURES = sorted(EYE_SHADERS) + ["christmas"]
 
 
 class EyeRenderer:
@@ -83,6 +84,9 @@ class EyeRenderer:
 
 def make_renderer(eye):
     """The renderer for --eye. Raises ValueError with a clear message."""
+    if eye == "christmas":
+        from christmas import ChristmasRenderer
+        return ChristmasRenderer()
     if eye not in EYE_SHADERS:
         raise ValueError(f"--eye must be one of {EYE_FIGURES} (got {eye!r})")
     return EyeRenderer(eye)
