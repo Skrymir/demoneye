@@ -12,3 +12,16 @@ if sys.platform.startswith("linux"):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """CI sets DEMONEYE_NO_SKIPS: any skipped test fails the run, so a missing
+    dependency or GL driver can't silently shrink what's tested."""
+    if not os.environ.get("DEMONEYE_NO_SKIPS"):
+        return
+    rep = session.config.pluginmanager.get_plugin("terminalreporter")
+    skipped = rep.stats.get("skipped", []) if rep else []
+    if skipped:
+        rep.ensure_newline()
+        rep.write_line(f"DEMONEYE_NO_SKIPS: {len(skipped)} test(s) skipped — failing", red=True)
+        session.exitstatus = 1

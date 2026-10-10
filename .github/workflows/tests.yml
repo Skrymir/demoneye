@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"      # what Raspberry Pi OS (trixie) ships
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      # glslang: shader compile checks for GLES 3.00 and GL 3.30.
+      # Mesa EGL: headless GLES context so every eye actually draws a frame.
+      - name: System packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends \
+            glslang-tools libegl1 libegl-mesa0 libgles2 libgl1-mesa-dri
+
+      - run: pip install -r requirements-dev.txt
+
+      # DEMONEYE_NO_SKIPS: a test that skips (missing dep, no GL) fails the run,
+      # so CI can't go green while quietly testing less.
+      - name: pytest
+        env:
+          DEMONEYE_NO_SKIPS: "1"
+        run: python -m pytest -q -rs tests
