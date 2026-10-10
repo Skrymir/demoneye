@@ -75,7 +75,7 @@ it draw straight to HDMI:
    sudo cp demoneye.service /etc/systemd/system/demoneye.service
    sudo systemctl daemon-reload
    sudo systemctl enable --now demoneye
-   journalctl -u demoneye -f   # watch it start / see the GL + MQTT lines
+   journalctl -t demoneye -f   # watch it start / see the GL + MQTT lines (not -u: see demoneye.service)
    ```
 
 Now both eyes come up on boot and self-sync as soon as the brain connects.

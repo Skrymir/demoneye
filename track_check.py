@@ -276,7 +276,7 @@ def main():
             say(OK, "the bridge acquired the fake person and published targets")
             for l in got[-3:]:
                 print("       " + re.sub(r"^\S+\s+\S+\s+", "", l)[:120])
-            print(f"     now on the LEFT Pi:  journalctl -u demoneye --since '{t0}' | grep track")
+            print(f"     now on the LEFT Pi:  journalctl -t demoneye --since '{t0}' | grep track")
             print("     -> '[track] target received' there means the whole chain works.")
         else:
             say(BAD, "the bridge didn't react to the fake person")
@@ -322,7 +322,7 @@ def main():
             print("  * " + f)
     elif hits.get("acquired"):
         print("  * The bridge acquired and published targets. The break is after it: on the brain (left Pi).")
-        print("    Check:  journalctl -u demoneye --since '%s' | grep -E 'track|target'" % a.since)
+        print("    Check:  journalctl -t demoneye --since '%s' | grep -E 'track|target'" % a.since)
         print("    and that the brain's config.ini [mqtt] host / target_topic match bridge.ini.")
     else:
         print("  * No break found in the window. Run again after tonight's show with --since.")

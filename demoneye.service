@@ -32,6 +32,11 @@ TTYPath=/dev/tty1
 StandardInput=tty
 StandardOutput=journal
 StandardError=journal
+# PAMName=login makes logind move the process into a session-N.scope, so its
+# output is NOT filed under this unit: `journalctl -u demoneye` shows only
+# systemd's start/stop lines. Tag it instead and read it with
+#     journalctl -t demoneye -f
+SyslogIdentifier=demoneye
 TTYReset=yes
 TTYVHangup=yes
 
