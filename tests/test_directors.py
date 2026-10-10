@@ -82,3 +82,18 @@ def test_target_hold_survives_clock_step(monkeypatch):
     monkeypatch.setattr(time, "time", lambda: real() + 3600)
     for _ in range(10): d.update(1 / 60)
     assert d.tracking
+
+
+def test_target_parser_rejects_non_finite():
+    """json.loads accepts NaN/Infinity: a NaN target is dropped, and a silly
+    hold can't lock the eyes on forever."""
+    t = directors._parse_target
+    assert t(b'{"x": NaN, "y": 0}') is None
+    assert t(b'{"x": 0, "y": Infinity}') is None
+    hold = lambda h: t(b'{"x": 0, "y": 0, "hold": %s}' % h)[3]
+    assert hold(b"1e999") == directors.S.TARGET_HOLD         # parses to inf
+    assert hold(b"Infinity") == directors.S.TARGET_HOLD
+    assert hold(b"1e9") == directors.MAX_TARGET_HOLD         # finite but silly: capped
+    assert hold(b"NaN") == directors.S.TARGET_HOLD
+    assert hold(b"-5") == directors.S.TARGET_HOLD
+    assert hold(b"3") == 3.0

@@ -290,3 +290,43 @@ def test_bridge_close_publishes_offline():
     b.client.disconnect = lambda: None
     b.close()
     assert ("halloween/eyes/status/bridge/availability", "offline", 1, True) in b.client.published
+
+
+class FlakyClient(FakeClient):
+    """Broker hiccups: the first few publishes raise."""
+    def __init__(self, failures):
+        super().__init__()
+        self.failures = failures
+
+    def publish(self, topic, payload, qos=0, retain=False):
+        if self.failures > 0:
+            self.failures -= 1
+            raise RuntimeError("broker went away")
+        return super().publish(topic, payload, qos, retain)
+
+
+def test_status_thread_survives_publish_errors():
+    """A publish error must not kill the status thread: HA would keep showing
+    frozen state that still says 'online'."""
+    import time
+    c = FlakyClient(failures=3)
+    p = H.StatusPublisher(c, "left", {}, lambda: {"show": "playing"}, tick_s=0.01)
+    p.start()
+    try:
+        deadline = time.monotonic() + 3
+        while not c.published and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert p._thread.is_alive()
+        assert c.last(p.topics["state"]) is not None, "never published after the errors"
+    finally:
+        p.go_offline()
+
+
+def test_failed_publish_is_retried_next_tick():
+    """If publishing a snapshot fails, the next tick must retry it rather than
+    think it already went out (and wait for the slow refresh)."""
+    c = FlakyClient(failures=1)
+    p = H.StatusPublisher(c, "left", {}, lambda: {"show": "playing"}, refresh_s=1e9)
+    with pytest.raises(RuntimeError):
+        p.tick()
+    assert p.tick() is True and c.last(p.topics["state"]) is not None

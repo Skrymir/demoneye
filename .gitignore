@@ -8,6 +8,7 @@ __pycache__/
 *.log
 frames/
 frames_*/
+local/
 
 # --- Secrets: never commit these (the repo is public) ---
 # Tokens and passwords go in /etc/demoneye.env and /etc/ha-bridge.env on each

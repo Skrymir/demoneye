@@ -53,9 +53,15 @@ From your Mac, in the project folder:
 ./deploy.sh --no-restart    # copy only
 ```
 
-It runs the test suite first and refuses to ship if anything fails. Each Pi's
+It runs the test suite first and refuses to ship if anything fails, if pytest
+isn't installed, or if a test was skipped because a dependency is missing
+(`./venv/bin/pip install -r requirements-dev.txt` once on the Mac). Each Pi's
 own `config.ini` / `bridge.ini` and its `venv` are never copied over or
-deleted, so per-Pi placement and `mirror` survive every deploy.
+deleted, so per-Pi placement and `mirror` survive every deploy. Backups
+(`config.ini.bak`, `*.bak`, `*~`) are left alone too. Anything else in
+`~/demoneye` on a Pi that isn't in this folder is **deleted**, so keep Pi-only
+files in `~/demoneye/local/`, which deploys never touch. Secret files (`.env`,
+`*.env`, `secrets/`) are never copied to the Pis.
 Only changed files are sent. On the Pi that runs the tracking bridge, it
 restarts `ha-bridge` too so the new code takes effect.
 

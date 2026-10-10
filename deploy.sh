@@ -61,20 +61,36 @@ if [ ${#missing[@]} -gt 0 ]; then
 fi
 
 # ---- 1. sanity: run the tests locally before shipping anything -------------
+# Untested code doesn't ship: no pytest, or a test skipped because something
+# isn't installed, stops the deploy just like a failure. (The GL draw tests'
+# "Linux-only" skip on a Mac is expected and allowed; CI runs those.)
 if [ "$RUN_TESTS" = 1 ]; then
   PY="./venv/bin/python"; [ -x "$PY" ] || PY="python3"
-  if "$PY" -c "import pytest" 2>/dev/null; then
-    echo "==> running tests"
-    "$PY" -m pytest -q tests || { echo "!! tests failed — not deploying (use --skip-tests to override)"; exit 1; }
-  else
-    echo "==> pytest not installed locally; skipping tests"
+  if ! "$PY" -c "import pytest" 2>/dev/null; then
+    echo "!! pytest isn't installed, so the tests can't run — not deploying."
+    echo "   ${PY%python*}pip install -r requirements-dev.txt   (or --skip-tests to deploy anyway)"
+    exit 1
+  fi
+  echo "==> running tests"
+  if ! DEMONEYE_NO_SKIPS=deps "$PY" -m pytest -q -rs tests; then
+    echo "!! tests failed or couldn't all run — not deploying"
+    echo "   missing dependency?  ${PY%python*}pip install -r requirements-dev.txt"
+    echo "   (--skip-tests to deploy anyway)"
+    exit 1
   fi
 fi
 
 # Files that are per-machine or rebuilt on the Pi: never copied, never deleted.
+# Everything else in ~/demoneye on a Pi is made to match this folder, and
+# rsync --delete removes anything not here, so keep Pi-only files in local/.
 EXCLUDES=(
   --exclude 'config.ini' --exclude 'bridge.ini'
   --exclude 'config.*.ini' --exclude 'bridge.*.ini' --exclude '*.local.ini'
+  --exclude 'config.ini.*' --exclude 'bridge.ini.*'
+  --exclude '*.bak' --exclude '*.orig' --exclude '*~'
+  --exclude 'local/'
+  # secrets (gitignored here) must never ship to the Pis
+  --exclude '.env' --exclude '*.env' --exclude 'secrets/'
   --exclude 'venv/' --exclude 'venv*/' --exclude '.venv/'
   --exclude '.git/' --exclude '__pycache__/' --exclude '.pytest_cache/'
   --exclude '*.pyc' --exclude '.DS_Store' --exclude '*.zip' --exclude '*.log'
