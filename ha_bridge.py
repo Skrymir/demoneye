@@ -276,10 +276,8 @@ class Bridge:
             return
         self.enabled = want
         print(f"[bridge] tracking {'enabled' if want else 'disabled'}", flush=True)
-        if not want and self.have:
-            self.have = False          # release any held target as we go quiet
-            self._publish_clear()
-            self._mark_seen(force=True)
+        if not want:
+            self._release_target()     # release any held target as we go quiet
         if self._loop is not None:     # paho thread -> wake the HA connection loop
             self._loop.call_soon_threadsafe(self._sync_events)
 
@@ -351,6 +349,14 @@ class Bridge:
 
     def _publish_clear(self):
         self.client.publish(self.cfg.topic, "clear", qos=0)
+
+    def _release_target(self):
+        """Drop any held target and tell the eyes, so the heartbeat stops
+        re-sending it."""
+        if self.have:
+            self.have = False
+            self._publish_clear()
+            self._mark_seen(force=True)
 
     def evaluate(self, force=False):
         """Recompute from the cache and publish (rate-limited)."""
@@ -463,6 +469,9 @@ class Bridge:
             went_off.cancel()
             e = session.exception()
             self.cache.clear()
+            # Without HA we can't tell if the target is still there; don't let
+            # the heartbeat keep the eyes staring at it for the whole outage.
+            self._release_target()
             if time.monotonic() - started > 60:
                 backoff = 1.0              # it was up a while: retry promptly
             print(f"[ha] disconnected: {e or 'closed by Home Assistant'} — "

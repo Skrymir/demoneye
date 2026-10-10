@@ -182,10 +182,10 @@ def projector_state():
 
 
 def _wait_for(want, timeout):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
+    t0 = time.monotonic()            # not time.time(): NTP steps the clock after boot
+    while time.monotonic() - t0 < timeout:
         if projector_state() == want:
-            return time.time() - t0
+            return time.monotonic() - t0
         time.sleep(0.5)
     return None
 

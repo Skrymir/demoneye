@@ -113,7 +113,7 @@ class EyeApp:
         self.net = dict(self.schema)      # latest authoritative state
         self.disp = dict(self.schema)     # smoothed on-screen state
         self.t = 0.0
-        self.last_state_at = time.time()  # watchdog: when the follower last heard the brain
+        self.last_state_at = time.monotonic()  # watchdog: when the follower last heard the brain
         self.stale = False
         # playback gate: solo has no controller so always plays; otherwise start
         # per START_MODE and let MQTT commands toggle it.
@@ -256,13 +256,19 @@ class EyeApp:
         if S.MQTT_USER:
             self.client.username_pw_set(S.MQTT_USER, S.MQTT_PASS)
         self.client.on_connect = self._on_connect
+        self.client.on_connect_fail = self._on_connect_fail
         self.client.on_message = self._on_message
         self._setup_status()              # sets the last will, so before connect()
+        # Connect in the background and keep retrying. After a power cut the
+        # Pis can boot before the broker; a blocking connect() that failed
+        # once used to leave us running solo all night (paho only retries on
+        # its own after a first successful connect).
+        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
         try:
-            self.client.connect(S.MQTT_HOST, S.MQTT_PORT, keepalive=30)
+            self.client.connect_async(S.MQTT_HOST, S.MQTT_PORT, keepalive=30)
             self.client.loop_start()
         except Exception as e:
-            print(f"[mqtt] connect failed: {e} — running solo", file=sys.stderr)
+            print(f"[mqtt] can't start MQTT: {e} — running solo", file=sys.stderr)
             self.client = None
             self.status = None
             return
@@ -307,6 +313,9 @@ class EyeApp:
         if self.status:
             self.status.on_connect()
 
+    def _on_connect_fail(self, client, userdata):
+        print(f"[mqtt] can't reach {S.MQTT_HOST}:{S.MQTT_PORT} — retrying", flush=True)
+
     def _on_message(self, client, userdata, msg):
         if msg.topic == S.COMMAND_TOPIC:
             cmd = _parse_command(msg.payload)
@@ -324,7 +333,7 @@ class EyeApp:
         try:
             d = json.loads(msg.payload)
             self.net = {k: float(d.get(k, self.schema[k])) for k in self.schema}  # atomic
-            self.last_state_at = time.time()
+            self.last_state_at = time.monotonic()
         except Exception:
             pass
 
@@ -417,7 +426,7 @@ class EyeApp:
         instead of freezing on its last frame for the rest of the night."""
         if self.solo or S.STALE_AFTER_S <= 0 or not self.client:
             return
-        stale = (time.time() - self.last_state_at) > S.STALE_AFTER_S
+        stale = (time.monotonic() - self.last_state_at) > S.STALE_AFTER_S
         if stale != self.stale:
             self.stale = stale
             print("[sync] no state from the brain — going dark" if stale

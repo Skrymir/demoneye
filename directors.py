@@ -93,8 +93,10 @@ class Director:
         self.dil_timer = 2.0
         self.t = 0.0
         # target tracking (set from MQTT on the brain)
-        self.track = None            # (x, y) external look-at target, or None
-        self.track_deadline = 0.0    # wall-clock time the target expires
+        # (x, y, deadline) external look-at target, or None. Written whole by
+        # the MQTT thread and read once per frame by update(), so a set/clear
+        # landing mid-frame can't be seen half-done. deadline is monotonic.
+        self.track = None
         self.tracking = False        # currently locked onto a target
         # mood / lid shape: eased open+slant streamed to both eyes
         self.open_v, self.slant_v = 1.0, 0.0
@@ -114,9 +116,8 @@ class Director:
         }.get(mood, (1.0, 0.0))          # neutral
 
     def set_target(self, x, y, hold):
-        # deadline first, so a reader that sees .track already sees a fresh deadline
-        self.track_deadline = time.time() + max(0.1, hold)
-        self.track = (max(-1.0, min(1.0, x)), max(-1.0, min(1.0, y)))
+        self.track = (max(-1.0, min(1.0, x)), max(-1.0, min(1.0, y)),
+                      time.monotonic() + max(0.1, hold))
 
     def clear_target(self):
         self.track = None
@@ -132,15 +133,15 @@ class Director:
     def update(self, dt):
         self.t += dt
 
-        now = time.time()
         was_tracking = self.tracking
-        if self.track is not None and now >= self.track_deadline:
-            self.track = None                      # target expired -> idle
-        tracking = self.track is not None
+        track = self.track                         # read once: see __init__
+        if track is not None and time.monotonic() >= track[2]:
+            track = None                           # target expired -> idle
+        tracking = track is not None
 
         # --- gaze ---
         if tracking:
-            tx, ty = self.track
+            tx, ty, _ = track
             # Tilt down: the eyes sit above the people they're watching, so a
             # target reported as level actually needs a downward look.
             ty = max(-1.0, min(1.0, ty - S.TRACK_LOOK_DOWN))
