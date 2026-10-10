@@ -40,6 +40,11 @@ def _parse_command(payload):
     return None
 
 
+# A target can't hold the eyes longer than this without a refresh, whatever
+# "hold" says: the bridge's heartbeat re-sends every ~0.75 s anyway.
+MAX_TARGET_HOLD = 30.0
+
+
 def _parse_target(payload):
     """Parse a look-here target. Returns ('set', x, y, hold) with x,y in -1..1
     (x: -1 left .. +1 right, y: -1 down .. +1 up), or ('clear',), or None.
@@ -62,9 +67,15 @@ def _parse_target(payload):
             return ("clear",)
         if "x" in d and "y" in d:
             try:
-                return ("set", float(d["x"]), float(d["y"]), float(d.get("hold", S.TARGET_HOLD)))
+                x, y = float(d["x"]), float(d["y"])
+                hold = float(d.get("hold", S.TARGET_HOLD))
             except Exception:
                 return None
+            if not (math.isfinite(x) and math.isfinite(y)):
+                return None                  # json accepts NaN/Infinity; we don't
+            if not math.isfinite(hold) or hold <= 0:
+                hold = S.TARGET_HOLD         # NaN/inf/negative: use the default
+            return ("set", x, y, min(hold, MAX_TARGET_HOLD))
         return None
     if raw.lower() in ("clear", "none", "lost", "off", ""):
         return ("clear",)

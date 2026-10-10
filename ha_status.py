@@ -294,9 +294,10 @@ class StatusPublisher:
                    or now - self._last_pub >= self.refresh_s)
             if not due:
                 return False
+        payload = json.dumps(snap, sort_keys=True)   # may raise: then nothing is marked sent
+        self.client.publish(self.topics["state"], payload, qos=1, retain=True)
+        with self._lock:
             self._last, self._last_pub = snap, now
-        self.client.publish(self.topics["state"], json.dumps(snap, sort_keys=True),
-                            qos=1, retain=True)
         return True
 
     def publish_last_seen(self, ts=None):
@@ -310,8 +311,17 @@ class StatusPublisher:
         self._thread.start()
 
     def _run(self):
+        # Nothing may end this loop but go_offline(): a dead status thread
+        # leaves HA showing frozen state that still says "online".
+        last_err, last_err_at = None, -1e9
         while not self._stop.wait(self.tick_s):
-            self.tick()
+            try:
+                self.tick()
+            except Exception as e:
+                now = self.clock()
+                if repr(e) != last_err or now - last_err_at > 60:
+                    print(f"[status] publish failed: {e!r} — will keep trying", flush=True)
+                    last_err, last_err_at = repr(e), now
 
     def go_offline(self, timeout=1.0):
         """Clean shutdown: say so now rather than waiting for the LWT."""

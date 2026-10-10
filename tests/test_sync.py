@@ -143,3 +143,30 @@ def test_ctrl_c_takes_the_clean_exit_path():
     finally:
         signal.signal(signal.SIGINT, saved[0])
         signal.signal(signal.SIGTERM, saved[1])
+
+
+def test_follower_ignores_non_finite_state():
+    """One NaN in the state stream used to stick in the smoothed state until
+    restart. It's dropped instead, and good state still flows afterwards."""
+    pytest.importorskip("pygame")
+    pytest.importorskip("OpenGL")
+    import math
+    import types
+    import demoneye
+    app = object.__new__(demoneye.EyeApp)
+    app.schema = {"gx": 0.0, "gy": 0.0}
+    app.lerp = {}
+    app.net, app.disp = dict(app.schema), dict(app.schema)
+    app.last_state_at = 0.0
+
+    def send(payload):
+        app._on_message(None, None, types.SimpleNamespace(topic=demoneye.S.TOPIC, payload=payload))
+        app._smooth(1 / 60)
+
+    send(b'{"gx": NaN, "gy": 0.5}')
+    send(b'{"gx": 0.2, "gy": Infinity}')
+    assert app.last_state_at == 0.0, "bad state counted as hearing from the brain"
+    send(b'{"gx": 0.3, "gy": 0.1}')
+    assert app.net == {"gx": 0.3, "gy": 0.1}
+    assert app.last_state_at > 0
+    assert all(math.isfinite(v) for v in app.disp.values())

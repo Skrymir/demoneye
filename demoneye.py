@@ -16,6 +16,7 @@ the window, the network, the loop and the watchdog.
 
 import argparse
 import json
+import math
 import os
 import random
 import signal
@@ -332,10 +333,20 @@ class EyeApp:
             return
         try:
             d = json.loads(msg.payload)
-            self.net = {k: float(d.get(k, self.schema[k])) for k in self.schema}  # atomic
-            self.last_state_at = time.monotonic()
+            net = {k: float(d.get(k, self.schema[k])) for k in self.schema}
         except Exception:
-            pass
+            return
+        # json accepts NaN/Infinity, and one NaN would stick in the smoothed
+        # state (disp += (NaN - disp)*k) until restart. Drop the whole message;
+        # it doesn't count as hearing from the brain either.
+        if not all(math.isfinite(v) for v in net.values()):
+            now = time.monotonic()
+            if now - getattr(self, "_bad_state_at", -1e9) > 60:
+                print(f"[sync] ignoring state with non-finite values: {msg.payload[:80]!r}", flush=True)
+                self._bad_state_at = now
+            return
+        self.net = net                       # atomic swap
+        self.last_state_at = time.monotonic()
 
     def _log_target(self, t, payload):
         """One log line when tracking starts and one when it ends (not one per
