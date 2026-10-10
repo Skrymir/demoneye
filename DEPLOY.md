@@ -117,7 +117,7 @@ Use the **same** `--eye` on both.
 sudo cp demoneye.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now demoneye
-journalctl -u demoneye -f
+journalctl -t demoneye -f
 ```
 
 Also: boot to console (`sudo raspi-config` → System Options → Boot/Auto Login →

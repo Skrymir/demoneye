@@ -339,7 +339,7 @@ class EyeApp:
 
     def _log_target(self, t, payload):
         """One log line when tracking starts and one when it ends (not one per
-        message), so `journalctl -u demoneye` shows whether targets arrived."""
+        message), so `journalctl -t demoneye` shows whether targets arrived."""
         now = time.time()
         last = getattr(self, "_target_seen_at", 0.0)
         if t is None:
