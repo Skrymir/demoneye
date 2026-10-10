@@ -90,3 +90,7 @@ env files that the services load (`/etc/demoneye.env`: `MQTT_USER`,
 `MQTT_PASS`; `/etc/ha-bridge.env`: `HA_TOKEN`); see the comments in
 `demoneye.service` and `ha-bridge.service`. `check_config.py` warns if a token
 is sitting in `bridge.ini`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
