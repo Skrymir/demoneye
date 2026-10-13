@@ -1,5 +1,21 @@
 # Changelog
 
+## Home Assistant: either tracker — 2026-10-12
+
+The dashboard card and alerts now work with the camera tracker
+([camtracker](https://github.com/Skrymir/camtracker)) as well as the mmWave
+bridge, whichever is running:
+- **Card:** the Tracking section shows the running tracker's rows (both
+  "running" rows when neither is up). The health summary flags no tracker,
+  both trackers at once, or the camera tracker without a picture.
+- **Alerts:** "tracking bridge down" becomes **no tracker running** (either
+  one counts); new **two trackers running** and **camera tracker has no
+  picture**; "nobody tracked" uses the latest sighting from either tracker.
+  **Delete the old "tracking bridge down" automation in HA**, or it fires
+  every night with the bridge off.
+- `tests/test_ha_tracking.py` renders the card's and alerts' templates for
+  each combination (adds PyYAML to the dev requirements).
+
 ## Project-neutral MQTT topics — 2026-10-10
 
 The topics are shared with the Christmas/Godot windows now, so they no longer

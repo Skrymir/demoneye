@@ -90,13 +90,21 @@
           The {{ which | join(' and ') }} eye is not running during the show.
           Check the Pi (pi-eye-{{ which | first }}.home): systemctl status demoneye
 
-- id: halloween_eyes_bridge_down
-  alias: "Halloween eyes: tracking bridge down"
-  description: The tracking bridge isn't running while the show is on.
+# Tracking: these work with either tracker, the camera tracker (camtracker, on
+# the server) or the mmWave bridge (ha_bridge.py, on a Pi). Run one, not both.
+
+- id: halloween_eyes_tracker_down
+  alias: "Halloween eyes: no tracker running"
+  description: >-
+    Neither the camera tracker nor the mmWave bridge is running while the show
+    is on. (Replaces the old "tracking bridge down" alert, which fires every
+    night once the camera tracker has taken over: delete that one.)
   mode: single
   triggers:
     - trigger: state
-      entity_id: binary_sensor.eye_bridge_running
+      entity_id:
+        - binary_sensor.camtracker_running
+        - binary_sensor.eye_bridge_running
       to: "off"
       for: "00:01:00"
     - trigger: state
@@ -107,44 +115,121 @@
     - condition: state
       entity_id: switch.halloween_eyes_show
       state: "on"
-    - condition: not
-      conditions:
-        - condition: state
-          entity_id: binary_sensor.eye_bridge_running
-          state: "on"
+    - condition: template
+      value_template: >-
+        {{ not is_state('binary_sensor.camtracker_running', 'on')
+           and not is_state('binary_sensor.eye_bridge_running', 'on') }}
   actions:
     - action: persistent_notification.create
       data:
         notification_id: halloween_eyes_bridge
-        title: "📡 Tracking bridge down"
+        title: "📡 No tracker running"
         message: >-
           The eyes are running but nothing is feeding them targets, so they won't
-          follow anyone. Last seen on {{ states('sensor.bridge_host') }}:
-          systemctl status ha-bridge
+          follow anyone. Camera tracker: docker logs camtracker on the server.
+          mmWave bridge: systemctl status ha-bridge on
+          {{ states('sensor.bridge_host') }}.
+
+- id: halloween_eyes_two_trackers
+  alias: "Halloween eyes: two trackers running"
+  description: >-
+    The camera tracker and the mmWave bridge both publish to the same target
+    topic, so with both up the eyes get pulled between them.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id:
+        - binary_sensor.camtracker_running
+        - binary_sensor.eye_bridge_running
+      to: "on"
+      for: "00:01:00"
+  conditions:
+    - condition: state
+      entity_id: binary_sensor.camtracker_running
+      state: "on"
+    - condition: state
+      entity_id: binary_sensor.eye_bridge_running
+      state: "on"
+  actions:
+    - action: persistent_notification.create
+      data:
+        notification_id: halloween_eyes_two_trackers
+        title: "👀 Two trackers running"
+        message: >-
+          The camera tracker and the mmWave bridge are both running, so the eyes
+          get pulled between them. Stop one: on
+          {{ states('sensor.bridge_host') }}, sudo systemctl disable --now
+          ha-bridge (or docker stop camtracker on the server).
+
+- id: halloween_eyes_camera_stream_down
+  alias: "Halloween eyes: camera tracker has no picture"
+  description: The camera tracker is running during the show but can't read the camera.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.camtracker_stream
+      to: "off"
+      for: "00:02:00"
+    - trigger: state
+      entity_id: switch.halloween_eyes_show
+      to: "on"
+      for: "00:02:00"
+  conditions:
+    - condition: state
+      entity_id: switch.halloween_eyes_show
+      state: "on"
+    - condition: state
+      entity_id: binary_sensor.camtracker_running
+      state: "on"
+    - condition: state
+      entity_id: binary_sensor.camtracker_stream
+      state: "off"
+      for: "00:02:00"
+  actions:
+    - action: persistent_notification.create
+      data:
+        notification_id: halloween_eyes_camera
+        title: "📷 Camera tracker has no picture"
+        message: >-
+          The camera tracker is running but hasn't had a picture from the camera
+          for 2 minutes, so the eyes won't follow anyone. Check the camera is up
+          and the server can reach it (docker logs camtracker on the server).
 
 - id: halloween_eyes_nobody_tracked
   alias: "Halloween eyes: nobody tracked all evening"
   description: >-
-    3 hours into the show and the sensor hasn't seen anyone. Usually means the
-    mmWave sensor is aimed wrong or the bridge isn't reading it.
+    3 hours into the show and the tracker hasn't seen anyone. Usually means the
+    camera or mmWave sensor is aimed wrong, or the tracker isn't reading it.
   mode: single
   triggers:
     - trigger: state
       entity_id: switch.halloween_eyes_show
       to: "on"
       for: "03:00:00"
+  variables:
+    # the latest "last person seen" from either tracker ('' = never)
+    last_seen: >-
+      {%- set ns = namespace(t='') -%}
+      {%- for e in ['sensor.camtracker_last_person_seen', 'sensor.last_target_seen'] -%}
+        {%- set s = states(e) -%}
+        {%- if s not in ['unknown', 'unavailable', 'none', '']
+               and (ns.t == '' or as_datetime(s) > as_datetime(ns.t)) -%}
+          {%- set ns.t = s -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.t }}
   conditions:
     - condition: template
       value_template: >-
-        {% set seen = states('sensor.last_target_seen') %}
-        {{ seen in ['unknown', 'unavailable', 'none', '']
-           or as_datetime(seen) < now() - timedelta(hours=3) }}
+        {{ last_seen == '' or as_datetime(last_seen) < now() - timedelta(hours=3) }}
   actions:
     - action: persistent_notification.create
       data:
         notification_id: halloween_eyes_nobody
         title: "🕸️ Nobody tracked tonight"
         message: >-
-          The show has been on for 3 hours and the sensor hasn't picked up anyone
-          (last person seen: {{ states('sensor.last_target_seen') }}). Check the
-          mmWave sensor's aim, and that its target entities update in HA.
+          The show has been on for 3 hours and the tracker hasn't picked up anyone
+          (last person seen: {{ last_seen or 'never' }}). Camera tracker: take a
+          snapshot (python camtracker.py --snapshot) to check what it sees.
+          mmWave bridge: check the sensor's aim, and that its target entities
+          update in HA.

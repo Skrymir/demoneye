@@ -6,3 +6,4 @@
 pytest>=8.0,<10
 jinja2>=3.1,<4       # test_status renders HA's templates
 packaging>=23,<27    # test_requirements checks these files
+PyYAML>=6,<7         # test_ha_tracking reads the HA card and alerts

@@ -7,14 +7,17 @@ Nothing in this folder runs on the Pis (`deploy.sh` doesn't copy it).
 | File | What it is | Where it goes |
 |---|---|---|
 | [dashboard_card.yaml](dashboard_card.yaml) | Status card: health summary, both eyes, tracking | Dashboard → + Add card → Manual |
-| [alert_automations.yaml](alert_automations.yaml) | Four alerts (projector, eye offline, bridge down, nobody tracked) | Settings → Automations |
+| [alert_automations.yaml](alert_automations.yaml) | Six alerts (projector, eye offline, no tracker, two trackers, camera picture, nobody tracked) | Settings → Automations |
 | [nodered_flow.json](nodered_flow.json) | Node-RED nodes that publish the show's on/off, and switch the Govee lights with it | Node-RED → Import |
 
 ## Show status
 
-Each eye and the tracking bridge announce themselves to Home Assistant over
-**MQTT discovery**: no add-on, no YAML sensors. Once the code is deployed, three
-devices appear under Settings → Devices & services → MQTT:
+Each eye and the tracker announce themselves to Home Assistant over **MQTT
+discovery**: no add-on, no YAML sensors. Once the code is deployed, the devices
+appear under Settings → Devices & services → MQTT. The tracker is either the
+mmWave bridge (`ha_bridge.py`, on a Pi) or the camera tracker
+([camtracker](https://github.com/Skrymir/camtracker), on the server). Run one,
+not both; the card and alerts work with whichever is running:
 
 | Device | Entity | Meaning |
 |---|---|---|
@@ -27,6 +30,11 @@ devices appear under Settings → Devices & services → MQTT:
 | | `sensor.last_target_seen` | When someone was last seen (timestamp). Kept while the show is off and across bridge restarts |
 | | `sensor.bridge_host` | Which Pi runs the bridge; attributes `enabled` (following the show), `version` |
 | | `binary_sensor.eye_bridge_ha_connected` | Bridge's WebSocket to HA is up. **Off while the show is off, by design** |
+| **Camera Person Tracker** (camtracker) | `binary_sensor.camtracker_running` | camtracker is up (same last-will rules) |
+| | `binary_sensor.camtracker_tracking` | Someone is being tracked right now |
+| | `sensor.camtracker_last_person_seen` | When someone was last seen (timestamp) |
+| | `binary_sensor.camtracker_stream` | It's getting a picture from the camera. **Off while the show is off, by design** |
+| | `sensor.camtracker_detector` | The Coral in use (`usb:0`); attributes `enabled`, `version` |
 | **Halloween Eyes** | `switch.halloween_eyes_show` | Mirrors the command topic, so it follows Node-RED. Flipping it publishes `on`/`off` (retained) exactly as Node-RED does. Published by the brain only |
 
 All the `left` entities exist for `right` too.
@@ -44,14 +52,21 @@ All the `left` entities exist for `right` too.
 4. **Dashboard card:** edit a dashboard → + Add card → Manual → paste
    [dashboard_card.yaml](dashboard_card.yaml).
    Built-in cards only. The top line is a health summary: "all good", or a
-   list of what's wrong.
+   list of what's wrong. The Tracking section shows whichever tracker is
+   running (camera or mmWave), and both when neither is.
 5. **Alerts:** [alert_automations.yaml](alert_automations.yaml)
-   has four automations. Each one posts a persistent notification; uncomment
+   has six automations. Each one posts a persistent notification; uncomment
    the `notify.mobile_app_…` action to get it on your phone too.
    - A projector is still off 2 minutes after the show went on
    - An eye has been offline for a minute during show hours
-   - The tracking bridge is down while the show is on
-   - Three hours into the show and nobody has been tracked (sensor aim)
+   - No tracker (camera or mmWave) is running while the show is on
+   - Both trackers are running (they'd pull the eyes between them)
+   - The camera tracker has had no picture for 2 minutes during the show
+   - Three hours into the show and nobody has been tracked (aim)
+
+   **Upgrading:** delete the old "tracking bridge down" automation. It only
+   knows the mmWave bridge, so it fires every night once the camera tracker
+   has taken over.
 
 Entity IDs are set on **first** discovery only (`default_entity_id`). If HA
 already had an entity with the same name, you may get a `_2` suffix: rename it
