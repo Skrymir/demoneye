@@ -130,6 +130,16 @@ lateral axis aligned to the eye's left/right.
 
 ---
 
+### Camera tracking (separate project)
+
+For the street, beyond the mmWave sensor's ~6 m, a camera between the eyes
+with person detection on a Coral publishes the same target messages:
+[camtracker](https://github.com/Skrymir/camtracker). It follows the same
+`command_topic`; run it **or** the mmWave bridge, not both, since both publish
+to `target_topic`.
+
+---
+
 ## Powering the projectors (IR)
 
 The Pis can power the projectors on and off with the **same Home Assistant
