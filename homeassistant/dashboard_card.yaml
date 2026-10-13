@@ -3,9 +3,14 @@
 # Add it: open a dashboard -> pencil (Edit) -> + Add card -> Manual,
 # then paste this whole file in.
 #
-# The entities come from MQTT discovery (ha_status.py). If HA gave any of them a
-# different entity_id (for example "_2" because an older entity had the name),
-# fix the id here or rename the entity under Settings -> Entities.
+# The entities come from MQTT discovery (ha_status.py, and camtracker's own
+# status for the camera tracker). If HA gave any of them a different entity_id
+# (for example "_2" because an older entity had the name), fix the id here or
+# rename the entity under Settings -> Entities.
+#
+# Tracking works with either tracker: the camera tracker (camtracker, on the
+# server) or the mmWave bridge (ha_bridge.py, on a Pi). The card shows
+# whichever one is running, and both when neither is (so you see they're down).
 
 type: vertical-stack
 cards:
@@ -24,8 +29,14 @@ cards:
           {% set ns.p = ns.p + [name ~ ': ' ~ states('sensor.eyes_' ~ side ~ '_show_state') | replace('_', ' ')] %}
         {% endif %}
       {% endfor %}
-      {% if show and not is_state('binary_sensor.eye_bridge_running', 'on') %}
-        {% set ns.p = ns.p + ['Tracking bridge: not running'] %}
+      {% set cam = is_state('binary_sensor.camtracker_running', 'on') %}
+      {% set bridge = is_state('binary_sensor.eye_bridge_running', 'on') %}
+      {% if cam and bridge %}
+        {% set ns.p = ns.p + ['Tracking: the camera tracker and the mmWave bridge are both running, so the eyes get pulled between them. Stop one'] %}
+      {% elif show and not (cam or bridge) %}
+        {% set ns.p = ns.p + ['Tracking: no tracker running (camera tracker or mmWave bridge)'] %}
+      {% elif show and cam and is_state('binary_sensor.camtracker_stream', 'off') %}
+        {% set ns.p = ns.p + ['Camera tracker: no picture from the camera'] %}
       {% endif %}
       {% if ns.p %}
       ### ⚠️ Needs a look
@@ -80,14 +91,99 @@ cards:
     title: Tracking
     state_color: true
     entities:
-      - entity: binary_sensor.eye_bridge_running
-        name: Bridge running
-      - entity: binary_sensor.tracking_active
-        name: Someone tracked now
-      - entity: sensor.last_target_seen
-        name: Last person seen
-        format: relative
-      - entity: sensor.bridge_host
-        name: Bridge runs on
-      - entity: binary_sensor.eye_bridge_ha_connected
-        name: Sensor link (off while the show is off)
+      # Each tracker's "running" row shows when that tracker is up, or when
+      # neither is; its other rows only while it's up.
+      - type: conditional
+        conditions:
+          - condition: or
+            conditions:
+              - condition: state
+                entity: binary_sensor.camtracker_running
+                state: "on"
+              - condition: state
+                entity: binary_sensor.eye_bridge_running
+                state_not: "on"
+        row:
+          entity: binary_sensor.camtracker_running
+          name: Camera tracker
+      - type: conditional
+        conditions:
+          - condition: or
+            conditions:
+              - condition: state
+                entity: binary_sensor.eye_bridge_running
+                state: "on"
+              - condition: state
+                entity: binary_sensor.camtracker_running
+                state_not: "on"
+        row:
+          entity: binary_sensor.eye_bridge_running
+          name: mmWave bridge
+      # camera tracker
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.camtracker_running
+            state: "on"
+        row:
+          entity: binary_sensor.camtracker_tracking
+          name: Someone tracked now
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.camtracker_running
+            state: "on"
+        row:
+          entity: sensor.camtracker_last_person_seen
+          name: Last person seen
+          format: relative
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.camtracker_running
+            state: "on"
+        row:
+          entity: binary_sensor.camtracker_stream
+          name: Camera stream (off while the show is off)
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.camtracker_running
+            state: "on"
+        row:
+          entity: sensor.camtracker_detector
+          name: Coral
+      # mmWave bridge
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.eye_bridge_running
+            state: "on"
+        row:
+          entity: binary_sensor.tracking_active
+          name: Someone tracked now
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.eye_bridge_running
+            state: "on"
+        row:
+          entity: sensor.last_target_seen
+          name: Last person seen
+          format: relative
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.eye_bridge_running
+            state: "on"
+        row:
+          entity: sensor.bridge_host
+          name: Bridge runs on
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.eye_bridge_running
+            state: "on"
+        row:
+          entity: binary_sensor.eye_bridge_ha_connected
+          name: Sensor link (off while the show is off)
