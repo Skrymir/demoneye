@@ -36,6 +36,7 @@ noticed. Use the same `--eye` on both Pis.
 - **[DEPLOY.md](DEPLOY.md)** — installing on the Pis, autostart, the matched-pair checklist
 - **[docs/EYES.md](docs/EYES.md)** — the eye types, tuning their look, mirroring a pair
 - **[docs/TRACKING.md](docs/TRACKING.md)** — the mmWave bridge, calibration, `track_test.py`, projector IR
+- **[docs/PROJECTOR_SERVICE.md](docs/PROJECTOR_SERVICE.md)** — projector power over MQTT on its own, for seasons the Pis boot into FPP
 - **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — running on the projectors, on/off behaviour, `--stats`, frame rate, sync troubleshooting
 - **[homeassistant/](homeassistant/README.md)** — everything on the Home Assistant side: live show status, the dashboard card, alerts, the Node-RED on/off flow
 
@@ -52,6 +53,7 @@ glutil.py        compile/link, fullscreen triangle
 ha_bridge.py     Home Assistant -> MQTT target bridge      (bridge.ini)
 ha_status.py     show status for Home Assistant (MQTT discovery), used by both
 ir_control.py    projector power over IR via ir-ctl
+projector_service.py  ir_control on its own over MQTT (FPP season)   projector.service
 stats.py         --stats readout
 check_config.py  verify both Pis' settings from the Mac   deploy.sh  ship to both Pis
 sync_probe.py    measure eye-sync latency on a Pi          track_check.py  diagnose tracking
