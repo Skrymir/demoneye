@@ -94,22 +94,48 @@ def test_stopping_never_presses():
     assert rec.calls == ["on"]
 
 
-def test_discovery_switch_and_result_templates():
-    d = P.discovery("left", "house/projector/left/command")
-    sw = d["homeassistant/switch/demoneye_projector_left_power/config"]
-    assert sw["command_topic"] == "house/projector/left/command"
-    assert sw["state_topic"] == "house/status/projector_left/state"
-    assert sw["availability_topic"] == "house/status/projector_left/availability"
-    # its own device, so the eye's (offline in FPP season) entities aren't touched
-    assert sw["device"]["identifiers"] == ["demoneye_projector_left"]
-    on = json.dumps({"power": "on", "result": "on"})
-    unk = json.dumps({"power": "unknown", "result": "idle"})
-    assert _render(sw["value_template"], on) == "on"
-    assert _render(sw["value_template"], unk) == "None"
-    res = d["homeassistant/sensor/demoneye_projector_left_result/config"]
-    assert _render(res["value_template"], on) in res["options"]
-    for cfg in d.values():
-        json.dumps(cfg)
+def test_repeat_of_done_command_is_ignored():
+    """A reconnect replays the retained command: don't press again."""
+    rec = Recorder()
+    w = _worker(rec)
+    assert w.command(True)
+    w.run_once()
+    assert not w.command(True)
+    assert not w.run_once()
+    assert rec.calls == ["on"]
+    assert w.command(False)          # a real change still goes through
+
+
+def test_repeat_after_failure_retries():
+    rec = Recorder(on_ok=False)
+    w = _worker(rec)
+    w.command(True)
+    w.run_once()
+    assert w.result == "failed_on"
+    assert w.command(True)
+    w.run_once()
+    assert rec.calls == ["on", "on"]
+
+
+def test_discovery_reuses_demoneyes_projector_entity():
+    import ha_status
+    d = P.discovery("left")
+    mine = d["homeassistant/binary_sensor/demoneye_left_projector/config"]
+    eye = ha_status.eye_discovery("left")["homeassistant/binary_sensor/demoneye_left_projector/config"]
+    # same entity + device as the eye's, so dashboards/alerts carry over
+    for k in ("unique_id", "default_entity_id", "device", "device_class", "name"):
+        assert mine[k] == eye[k], k
+    # but fed by this service
+    assert mine["state_topic"] == "house/status/projector_left/state"
+    assert mine["availability_topic"] == "house/status/projector_left/availability"
+    on = json.dumps({"power": "on", "result": "on", "desired": "on", "changed": "x", "host": "h"})
+    unk = json.dumps({"power": "unknown", "result": "idle", "desired": "none", "changed": "x", "host": "h"})
+    assert _render(mine["value_template"], on) == "ON"
+    assert _render(mine["value_template"], unk) == "None"
+    attrs = json.loads(_render(mine["json_attributes_template"], on))
+    assert attrs["result"] == "on"
+    assert len(d) == 1
+    json.dumps(d)
 
 
 def test_config_node_and_topics(tmp_path, monkeypatch):
@@ -121,8 +147,7 @@ def test_config_node_and_topics(tmp_path, monkeypatch):
     c = P.load(str(ini))
     assert (c["host"], c["user"], c["password"]) == ("10.0.0.9", "envuser", "p")
     assert c["side"] == "right"
-    assert c["command_topic"] == "house/projector/command"
-    assert c["node_command_topic"] == "house/projector/right/command"
+    assert c["command_topic"] == "house/christmas/command"
 
 
 def test_node_auto_from_hostname(tmp_path, monkeypatch):

@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
 """
-Projector power service: turn the window projectors on/off over MQTT, with the
-HDMI check from ir_control.py, and nothing else (no eye, no display, no GL).
+Projector power service: the projector half of demoneye, without the eye.
 
-Use this when a Pi is booted into something other than demoneye (FPP for the
-Christmas show) but Home Assistant should still own projector power. Only
-needs paho-mqtt + ir-ctl; imports ir_control.py and ha_status.py unchanged.
+For seasons the window Pis are booted into FPP (Christmas). It follows ONE
+retained show command, exactly like demoneye follows house/show/command:
 
-Commands (payloads like demoneye's: on/off/1/0/true/false/start/stop or
-{"state": "on"}):
-    house/projector/command            both projectors
-    house/projector/<node>/command     just this one (node = left / right)
+    house/christmas/command     on / off (retained, QoS 1; also 1/0, play/stop,
+                                {"state": "ON"} — the same words demoneye takes)
 
-Status (retained; Home Assistant entities appear by MQTT discovery under a
-"Window Projector Left/Right" device):
+On -> projector on, off -> projector off, each confirmed by HDMI (ir_control:
+no press if it's already there, one retry if a press was missed). The command
+is retained, so a Pi that reboots mid-evening picks up the current state. A
+repeat of the command already carried out (an MQTT reconnect replays the
+retained one) is ignored, unless the last attempt failed.
+
+Status for Home Assistant uses demoneye's own entity: binary_sensor.projector_left
+/ _right on the "Demon Eye Left/Right" device, so dashboards and alerts work
+the same in both seasons. Here its state comes from this service:
+
     house/status/projector_<node>/availability   online | offline (LWT)
     house/status/projector_<node>/state          JSON:
         power     on | off | unknown        HDMI state right now
         result    idle | turning_on | on | turning_off | off |
                   failed_on | failed_off   outcome of the last command
-        desired   on | off | none           last command received
+        desired   on | off | none           command being followed
         changed   ISO time result last changed
+    (result/desired/changed show up as attributes of the projector entity)
 
-Node-RED verifies a command by waiting for result == "on" / "off" on both
-projectors; "failed_on" / "failed_off" means ir_control gave up after its
-retries (the projector didn't change HDMI state).
+When the Pi boots back into demoneye, demoneye re-publishes the entity's
+discovery and takes it back.
 
 Run:
     python projector_service.py                 # uses config.ini next to it
@@ -47,13 +51,9 @@ import ir_control
 from directors import _parse_command
 
 DEFAULTS = {
-    "command_topic": "house/projector/command",
-    "node_command_base": "house/projector",
+    "command_topic": "house/christmas/command",
     "node": "auto",
 }
-
-RESULTS = ["idle", "turning_on", "on", "turning_off", "off", "failed_on", "failed_off"]
-
 
 # ---------------------------------------------------------------- config
 def load(path):
@@ -73,46 +73,30 @@ def load(path):
         "password": os.environ.get("MQTT_PASS") or m.get("password", ""),
         "side": side,
         "command_topic": ps["command_topic"],
-        "node_command_topic": f"{ps['node_command_base'].rstrip('/')}/{side}/command",
         "status": status,
         "projector": cp["projector"] if cp.has_section("projector") else None,
     }
 
 
-def discovery(side, command_topic, base="house/status", prefix="homeassistant"):
-    """HA discovery: a Projector switch (state from HDMI, commands to this
-    projector's own topic) and a Last result sensor."""
-    node = f"projector_{side}"
-    t = ha_status.topics(base, node)
-    dev = {"identifiers": [f"demoneye_{node}"], "name": f"Window Projector {side.capitalize()}",
-           "manufacturer": "demoneye", "model": "IR projector control",
-           "sw_version": ha_status.VERSION}
-    avail = {"availability_topic": t["availability"]}
-
-    def ent(component, thing, cfg):
-        uid = f"demoneye_{node}_{thing}"
-        return f"{prefix}/{component}/{uid}/config", dict(cfg, unique_id=uid, device=dev)
-
-    return dict([
-        ent("switch", "power", {
-            "name": "Projector", "icon": "mdi:projector", **avail,
-            "command_topic": command_topic, "payload_on": "on", "payload_off": "off",
-            "state_topic": t["state"],
-            "value_template": "{{ {'on': 'on', 'off': 'off'}.get(value_json.power, 'None') }}",
-            "state_on": "on", "state_off": "off",
-            "default_entity_id": f"switch.window_projector_{side}",
-        }),
-        ent("sensor", "result", {
-            "name": "Last result", "device_class": "enum", "options": RESULTS, **avail,
-            "state_topic": t["state"], "value_template": "{{ value_json.result }}",
-            "default_entity_id": f"sensor.window_projector_{side}_result",
-        }),
-        ent("binary_sensor", "running", {
-            "name": "Running", "device_class": "running",
-            "state_topic": t["availability"], "payload_on": "online", "payload_off": "offline",
-            "default_entity_id": f"binary_sensor.window_projector_{side}_running",
-        }),
-    ])
+def discovery(side, base="house/status", prefix="homeassistant"):
+    """HA discovery for demoneye's projector entity (same unique_id, entity_id
+    and device as ha_status.eye_discovery), fed by this service's topics."""
+    t = ha_status.topics(base, f"projector_{side}")
+    uid = f"demoneye_{side}_projector"
+    return {f"{prefix}/binary_sensor/{uid}/config": {
+        "unique_id": uid, "name": "Projector", "device_class": "power",
+        "availability_topic": t["availability"],
+        "state_topic": t["state"],
+        "value_template": "{{ {'on': 'ON', 'off': 'OFF'}.get(value_json.power, 'None') }}",
+        "json_attributes_topic": t["state"],
+        "json_attributes_template":
+            "{{ {'result': value_json.result, 'desired': value_json.desired,"
+            " 'changed': value_json.changed, 'host': value_json.host,"
+            " 'source': 'projector_service'} | tojson }}",
+        "default_entity_id": f"binary_sensor.projector_{side}",
+        "device": ha_status._device(side, f"Demon Eye {side.capitalize()}",
+                                    "Raspberry Pi 5 eye"),
+    }}
 
 
 # ---------------------------------------------------------------- worker
@@ -132,9 +116,18 @@ class PowerWorker:
         self._thread = None
 
     def command(self, want):
+        """Follow `want`. Returns False if it's a repeat of the command already
+        carried out (e.g. the retained command replayed on an MQTT reconnect):
+        acting again could toggle a projector whose HDMI state can't be read."""
         with self._lock:
+            pending = self._wake.is_set()
+            repeat = (want == self.desired and not pending
+                      and not self.result.startswith("failed"))
+            if repeat:
+                return False
             self.desired = want
         self._wake.set()
+        return True
 
     def _set(self, result):
         with self._lock:
@@ -223,8 +216,7 @@ def main(argv=None):
 
     worker = PowerWorker(ir_control.power_on, ir_control.power_off, changed)
     status = ha_status.StatusPublisher(
-        client, node, discovery(side, cfg["node_command_topic"], st["base_topic"],
-                                st["discovery_prefix"]),
+        client, node, discovery(side, st["base_topic"], st["discovery_prefix"]),
         snapshot, base=st["base_topic"], prefix=st["discovery_prefix"],
         refresh_s=st["refresh_s"])
 
@@ -234,23 +226,22 @@ def main(argv=None):
             print(f"[mqtt] broker refused the connection: {rc}", flush=True)
             return
         print(f"[mqtt] connected to {cfg['host']}:{cfg['port']}", flush=True)
-        client.subscribe([(cfg["command_topic"], 1), (cfg["node_command_topic"], 1)])
+        client.subscribe(cfg["command_topic"], 1)
         status.on_connect()
 
     def on_message(client, userdata, msg):
-        if msg.topic not in (cfg["command_topic"], cfg["node_command_topic"]):
-            return
-        if msg.retain:
-            # A retained command is old news (left on the broker by someone);
-            # acting on it at every boot would toggle projectors unasked.
-            print(f"[cmd] ignoring retained message on {msg.topic}", flush=True)
+        if msg.topic != cfg["command_topic"]:
             return
         want = _parse_command(msg.payload)
         if want is None:
             print(f"[cmd] ignoring {msg.payload[:40]!r} on {msg.topic}", flush=True)
             return
-        print(f"[cmd] {'on' if want else 'off'} ({msg.topic})", flush=True)
-        worker.command(want)
+        word = "on" if want else "off"
+        how = " (retained)" if msg.retain else ""
+        if worker.command(want):
+            print(f"[cmd] show {word}{how}", flush=True)
+        else:
+            print(f"[cmd] show {word}{how}: already done, nothing to do", flush=True)
 
     client.on_connect = on_connect
     client.on_message = on_message
@@ -259,8 +250,8 @@ def main(argv=None):
     client.loop_start()
     worker.start()
     status.start()
-    print(f"[projector] '{side}' listening on {cfg['command_topic']} and "
-          f"{cfg['node_command_topic']}; status on {st['base_topic']}/{node}/", flush=True)
+    print(f"[projector] '{side}' following {cfg['command_topic']}; "
+          f"status on {st['base_topic']}/{node}/", flush=True)
 
     done = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):

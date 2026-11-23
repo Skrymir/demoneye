@@ -1,10 +1,11 @@
 # Projector power without the eyes (`projector_service.py`)
 
 For seasons when the Pis are booted into FPP (Christmas: the Pis are FPP
-remotes in fpp-picap1's MultiSync and FPP plays the window videos). Home
-Assistant still owns projector power, using the same closed-loop IR control as
-Halloween (`ir_control.py`: no press if HDMI already shows the wanted state,
-retry once if the press was missed).
+remotes in fpp-picap1's MultiSync and FPP plays the window videos). It's the
+projector half of demoneye on its own, set up the same way as Halloween: it
+follows one retained show command and confirms power by HDMI (`ir_control.py`:
+no press if HDMI already shows the wanted state, one retry if a press was
+missed).
 
 It is only `ir_control.py` + `ha_status.py` behind MQTT. No pygame, no GL, no
 display, so it doesn't compete with FPP for HDMI.
@@ -13,24 +14,27 @@ display, so it doesn't compete with FPP for HDMI.
 
 | Topic | Direction | Payload |
 |---|---|---|
-| `house/projector/command` | HA → both Pis | `on` / `off` (or any word demoneye accepts, or `{"state":"on"}`) |
-| `house/projector/<left\|right>/command` | HA → one Pi | same |
-| `house/status/projector_<node>/state` | Pi → HA, retained | `{"power": "on\|off\|unknown", "result": "...", "desired": "on\|off\|none", "changed": ISO}` |
+| `house/christmas/command` | Node-RED / `switch.christmas_show` → both Pis, **retained**, QoS 1 | `on` / `off` (same words demoneye accepts, or `{"state":"ON"}`) |
+| `house/status/projector_<node>/state` | Pi → HA, retained | `{"power": "on\|off\|unknown", "result": "...", "desired": "on\|off\|none", "changed": ISO, ...}` |
 | `house/status/projector_<node>/availability` | Pi → HA, retained, LWT | `online` / `offline` |
+
+Like `house/show/command` for Halloween, the command is the show's state: a Pi
+that reboots mid-evening picks it up and gets its projector there. A replay of
+the command already carried out (every MQTT reconnect replays the retained
+one) is ignored unless the last attempt failed, so a projector whose HDMI state
+can't be read isn't toggled by a network blip.
 
 `result` goes `turning_on` → `on`, or `turning_off` → `off`. A press the
 projector never answered (after `retries`) ends in `failed_on` / `failed_off`.
-That is the "verify" a Node-RED flow should wait on. `power` is the live HDMI
-state, polled every `projector_poll_s`.
+`power` is the live HDMI state, polled every `projector_poll_s`.
 
-Publish commands **without retain**. A retained command is ignored, so a reboot
-can't toggle a projector by replaying an old message.
-
-Home Assistant gets a **Window Projector Left/Right** device on its own, by MQTT
-discovery: `switch.window_projector_left` (state from HDMI), the
-`sensor.window_projector_left_result` enum and a `Running` binary sensor. It's
-a separate device from Demon Eye Left/Right, so the eye entities just show
-offline for the season.
+Home Assistant sees it as demoneye's own **`binary_sensor.projector_left`** /
+**`_right`**, on the **Demon Eye Left/Right** device: same unique_id and entity
+id, but with this service's state and availability topics, and `result`,
+`desired` and `changed` as attributes. Dashboards and alerts that use those
+entities work in both seasons. The eye's other entities just show unavailable
+for the season, and when the Pi boots back into demoneye, the eye re-publishes the
+entity's discovery and takes it back.
 
 ## Install on an FPP-booted Pi
 
@@ -95,11 +99,12 @@ sudo systemctl daemon-reload && sudo systemctl enable --now projector
 journalctl -u projector -f
 ```
 
-From anywhere on the LAN:
+From anywhere on the LAN (this is the real show switch, so it's retained):
 
 ```bash
 mosquitto_sub -h 192.168.86.5 -t 'house/status/projector_+/state' -v &
-mosquitto_pub -h 192.168.86.5 -t house/projector/command -m on
+mosquitto_pub -h 192.168.86.5 -t house/christmas/command -r -q 1 -m on
+mosquitto_pub -h 192.168.86.5 -t house/christmas/command -r -q 1 -m off
 ```
 
 ## Check with FPP
