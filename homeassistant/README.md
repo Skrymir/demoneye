@@ -8,7 +8,7 @@ Nothing in this folder runs on the Pis (`deploy.sh` doesn't copy it).
 |---|---|---|
 | [dashboard_card.yaml](dashboard_card.yaml) | Status card: health summary, both eyes, tracking | Dashboard → + Add card → Manual |
 | [alert_automations.yaml](alert_automations.yaml) | Six alerts (projector, eye offline, no tracker, two trackers, camera picture, nobody tracked) | Settings → Automations |
-| [nodered_flow.json](nodered_flow.json) | Node-RED nodes that publish the show's on/off, and switch the Govee lights with it | Node-RED → Import |
+| [nodered_flow.json](nodered_flow.json) | The Halloween Show tab: switches the Govee lights with the show | Node-RED → Import |
 
 ## Show status
 
@@ -79,19 +79,25 @@ Everything follows one retained (QoS 1) message on `house/show/command`:
 Pis, the projectors (over IR) and the tracking bridge react to it together,
 and a Pi that reboots mid-evening picks up the current state at once.
 
-**Node-RED schedules the show:** import [nodered_flow.json](nodered_flow.json)
-and wire your sun state machine into *Set ON* / *Set OFF*. Its broker node
-points at `192.168.86.5:1883`.
+**Who publishes it:** the house's **Holiday Shows** dispatcher in Node-RED, when
+the Home Assistant dropdown `input_select.holiday_season` is `Halloween`. It turns
+the show on at golden hour and off at 10 PM, and sends Christmas its own topic
+(`house/christmas/command`) the rest of the time. Its flows, the schedule and the
+whole design live in the
+[christmas-show repo's `homeassistant/`](https://github.com/Skrymir/christmas-show/tree/master/homeassistant);
+nothing in this repo schedules the show any more. With any other season selected,
+the dispatcher publishes `off` here.
 
 `switch.halloween_eyes_show` shows the current state and flips it by hand. The
-next scheduled change from Node-RED overrides a manual one.
+next scheduled change from the dispatcher overrides a manual one.
 
 How the Pis behave before the first command (`start = idle` or `playing` in
 `config.ini`) is covered in [docs/OPERATIONS.md](../docs/OPERATIONS.md#remote-control-home-assistant).
 
 ## Govee lights
 
-The Node-RED flow also switches the Govee lights with the show:
+[nodered_flow.json](nodered_flow.json) is the **Halloween Show** tab as it runs
+live (exported 2026-11-24). It switches the Govee lights with the show:
 
 | Show | Lights |
 |---|---|
@@ -111,9 +117,16 @@ ignored, so a midday redeploy won't turn the lights on.
 
 ### Setup
 
-1. In Node-RED, import the flow (or just the new nodes), open the *Blue fire*
-   and *Nighttime* action nodes, pick your Home Assistant server, and Deploy.
+1. In Node-RED, import the flow. It carries the `eyes_broker` node
+   (`192.168.86.5:1883`, no credentials): if Node-RED already has that broker,
+   re-point the MQTT nodes to it. Open the *Blue fire* and *Nighttime* action
+   nodes and pick your Home Assistant server. Keep **one** MQTT-in per topic and
+   broker: two on `house/show/command` only get the retained message once after a
+   deploy.
 2. Test: flip `switch.halloween_eyes_show` on and off.
+
+The tab also has an *eyes command* MQTT-out on `house/show/command` (retained,
+QoS 1) with nothing wired into it: a spare publisher, as found live.
 
 ### If a scene is missing or renamed
 

@@ -14,7 +14,7 @@ display, so it doesn't compete with FPP for HDMI.
 
 | Topic | Direction | Payload |
 |---|---|---|
-| `house/christmas/command` | Node-RED / `switch.christmas_show` → both Pis, **retained**, QoS 1 | `on` / `off` (same words demoneye accepts, or `{"state":"ON"}`) |
+| `house/christmas/command` | Node-RED / `switch.christmas_show` → both Pis, **retained**, QoS 1 | `on` / `off` (same words demoneye accepts, or `{"state":"ON"}`); anything else, including `finish`, is ignored |
 | `house/status/projector_<node>/state` | Pi → HA, retained | `{"power": "on\|off\|unknown", "result": "...", "desired": "on\|off\|none", "changed": ISO, ...}` |
 | `house/status/projector_<node>/availability` | Pi → HA, retained, LWT | `online` / `offline` |
 
@@ -23,6 +23,24 @@ that reboots mid-evening picks it up and gets its projector there. A replay of
 the command already carried out (every MQTT reconnect replays the retained
 one) is ignored unless the last attempt failed, so a projector whose HDMI state
 can't be read isn't toggled by a network blip.
+
+## Scheduled stop
+
+The 10 PM stop doesn't cut the show off mid-sequence. Node-RED publishes
+`finish` on `house/christmas/command`, and the Christmas Show tab tells FPP to stop
+gracefully. This service ignores `finish`, as it ignores any payload that isn't
+an on or off word (`directors._parse_command` returns `None` for it), so the
+projectors stay on while FPP finishes the sequence. Once FPP is idle, the
+Christmas Show tab publishes the retained `off` and the projectors turn off. A
+manual stop publishes `off` straight away, and everything stops at once.
+
+Don't add `finish` to the on/off words: the projectors would go dark while the
+lights are still playing. `tests/test_projector_service.py` pins this down. The
+full design (the Holiday Shows dispatcher, the FPP bridge, the dashboard and
+alerts) is in the
+[christmas-show repo's `homeassistant/`](https://github.com/Skrymir/christmas-show/tree/master/homeassistant).
+
+## Status
 
 `result` goes `turning_on` → `on`, or `turning_off` → `off`. A press the
 projector never answered (after `retries`) ends in `failed_on` / `failed_off`.

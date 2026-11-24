@@ -1,5 +1,16 @@
 # Changelog
 
+## Home Assistant: the Holiday Shows dispatcher schedules the show — 2026-11-24
+
+- `house/show/command` is now published by the house's **Holiday Shows**
+  dispatcher in Node-RED when Holiday Season = Halloween (or by hand with
+  `switch.halloween_eyes_show`). Its flows and design live in the
+  [christmas-show repo](https://github.com/Skrymir/christmas-show/tree/master/homeassistant).
+- `homeassistant/nodered_flow.json` is now the live **Halloween Show** tab (show
+  command → Govee blue fire / night mode). *Set ON* / *Set OFF* are gone from it.
+- `projector_service` documents the scheduled stop: it ignores `finish`, so the
+  projectors stay on while FPP finishes the sequence. A test pins this.
+
 ## Home Assistant: either tracker — 2026-10-12
 
 The dashboard card and alerts now work with the camera tracker

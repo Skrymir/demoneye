@@ -117,6 +117,24 @@ def test_repeat_after_failure_retries():
     assert rec.calls == ["on", "on"]
 
 
+@pytest.mark.parametrize("payload", [b"finish", b"FINISH", b'"finish"', b'{"state": "finish"}'])
+def test_finish_is_ignored_so_projectors_stay_on(payload):
+    """The scheduled stop: Node-RED sends "finish", FPP finishes its sequence,
+    and only then sends "off". The projectors must stay on until that "off"; if
+    "finish" ever became an on/off word they'd go dark mid-sequence."""
+    assert P._parse_command(payload) is None
+    rec = Recorder()
+    w = _worker(rec)
+    w.command(True)
+    w.run_once()
+    want = P._parse_command(payload)      # what on_message does with it
+    if want is not None:
+        w.command(want)
+    assert not w.run_once()               # nothing to do
+    assert rec.calls == ["on"]
+    assert (w.desired, w.result) == (True, "on")
+
+
 def test_discovery_reuses_demoneyes_projector_entity():
     import ha_status
     d = P.discovery("left")

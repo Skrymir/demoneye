@@ -6,7 +6,7 @@
 # you keep automations in automations.yaml, append the whole list.
 #
 # "Show hours" = switch.halloween_eyes_show is on. That switch mirrors the
-# retained command topic, so it follows Node-RED's sun state machine too.
+# retained command topic, so it follows the Holiday Shows schedule too.
 #
 # Each alert posts a persistent notification (the bell in the sidebar). To get
 # it on your phone as well, uncomment the notify action and use your device's
