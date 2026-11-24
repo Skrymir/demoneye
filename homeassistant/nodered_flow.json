@@ -1,105 +1,25 @@
 [
     {
-        "id": "eyes_tab",
+        "id": "hal_tab",
         "type": "tab",
-        "label": "Halloween Eyes",
+        "label": "Halloween Show",
         "disabled": false,
-        "info": "MQTT output for the projected eyes.\n\nWire your sun state machine into 'Set ON' or 'Set OFF'. One message does\neverything: demoneye powers the projector over IR, un-blanks the display,\nand both Pis (brain + follower) react together.\n\nRetained + QoS 1, so a Pi rebooting mid-evening picks up the current state\nimmediately instead of waiting for the next transition."
-    },
-    {
-        "id": "eyes_broker",
-        "type": "mqtt-broker",
-        "name": "Mosquitto",
-        "broker": "192.168.86.5",
-        "port": "1883",
-        "clientid": "nodered-halloween",
-        "autoConnect": true,
-        "usetls": false,
-        "protocolVersion": "4",
-        "keepalive": "60",
-        "cleansession": true
-    },
-    {
-        "id": "set_on",
-        "type": "change",
-        "z": "eyes_tab",
-        "name": "Set ON",
-        "rules": [
-            {
-                "t": "set",
-                "p": "payload",
-                "pt": "msg",
-                "to": "on",
-                "tot": "str"
-            }
-        ],
-        "action": "",
-        "property": "",
-        "from": "",
-        "to": "",
-        "reg": false,
-        "x": 300,
-        "y": 120,
-        "wires": [
-            [
-                "eyes_command"
-            ]
-        ]
-    },
-    {
-        "id": "set_off",
-        "type": "change",
-        "z": "eyes_tab",
-        "name": "Set OFF",
-        "rules": [
-            {
-                "t": "set",
-                "p": "payload",
-                "pt": "msg",
-                "to": "off",
-                "tot": "str"
-            }
-        ],
-        "action": "",
-        "property": "",
-        "from": "",
-        "to": "",
-        "reg": false,
-        "x": 300,
-        "y": 200,
-        "wires": [
-            [
-                "eyes_command"
-            ]
-        ]
-    },
-    {
-        "id": "eyes_command",
-        "type": "mqtt out",
-        "z": "eyes_tab",
-        "name": "eyes command",
-        "topic": "house/show/command",
-        "qos": "1",
-        "retain": "true",
-        "broker": "eyes_broker",
-        "x": 560,
-        "y": 160,
-        "wires": []
+        "info": "What Halloween does when the show is switched.\n\nListens to house/show/command (retained on/off from the Holiday Shows tab when Holiday Season = Halloween, or from switch.halloween_eyes_show). The demoneye Pis follow the same topic on their own (eyes + projectors).\n\nGovee: on -> blue fire, off -> night mode. The first message after a deploy or restart (the retained one) is ignored.\n\n'eyes command' is a spare publisher to house/show/command (not wired)."
     },
     {
         "id": "lights_comment",
         "type": "comment",
-        "z": "eyes_tab",
+        "z": "hal_tab",
         "name": "Govee lights follow the show",
         "info": "Listens to the same retained command the Pis use, so the lights change whether the show is switched by the schedule above or by hand from switch.halloween_eyes_show.\n\nOn  -> scene.govee_to_mqtt_one_click_leisure_blue_fire\nOff -> scene.govee_to_mqtt_one_click_leisure_night_mode\n\nBoth are Govee Tap-to-Runs synced into HA by govee2mqtt. To use different scene names, edit the two action nodes.\n\nThe filter ignores the first message after a deploy or restart (the retained one), so redeploying Node-RED at noon won't turn the lights on.",
-        "x": 190,
-        "y": 280,
+        "x": 200,
+        "y": 60,
         "wires": []
     },
     {
-        "id": "lights_in",
+        "id": "7edf248943d6c9c3",
         "type": "mqtt in",
-        "z": "eyes_tab",
+        "z": "hal_tab",
         "name": "show command",
         "topic": "house/show/command",
         "qos": "1",
@@ -110,17 +30,17 @@
         "rh": 0,
         "inputs": 0,
         "x": 160,
-        "y": 340,
+        "y": 120,
         "wires": [
             [
-                "lights_parse"
+                "809a6005569f758d"
             ]
         ]
     },
     {
-        "id": "lights_parse",
+        "id": "809a6005569f758d",
         "type": "function",
-        "z": "eyes_tab",
+        "z": "hal_tab",
         "name": "on / off",
         "func": "// Same rules as the eyes (directors.py _parse_command), so the lights can\n// never disagree with the Pis about whether the show is on.\nconst ON = [\"on\", \"1\", \"true\", \"play\", \"start\", \"yes\", \"open\"];\nconst OFF = [\"off\", \"0\", \"false\", \"stop\", \"pause\", \"no\", \"close\"];\n\nlet v = msg.payload;\nif (Buffer.isBuffer(v)) v = v.toString();\nif (v !== null && typeof v === \"object\") {\n    v = v.state ?? \"\";\n} else {\n    v = String(v ?? \"\").trim().replace(/^\"|\"$/g, \"\");\n    if (v.startsWith(\"{\")) {\n        try { v = JSON.parse(v).state ?? \"\"; } catch (e) { return null; }\n    }\n}\nv = String(v).trim().toLowerCase();\n\nif (ON.includes(v)) msg.payload = \"on\";\nelse if (OFF.includes(v)) msg.payload = \"off\";\nelse return null;\nreturn msg;",
         "outputs": 1,
@@ -130,17 +50,17 @@
         "finalize": "",
         "libs": [],
         "x": 340,
-        "y": 340,
+        "y": 120,
         "wires": [
             [
-                "lights_changed"
+                "2fcbbcd822032018"
             ]
         ]
     },
     {
-        "id": "lights_changed",
+        "id": "2fcbbcd822032018",
         "type": "rbe",
-        "z": "eyes_tab",
+        "z": "hal_tab",
         "name": "only on change",
         "func": "rbei",
         "gap": "",
@@ -150,17 +70,17 @@
         "property": "payload",
         "topi": "topic",
         "x": 510,
-        "y": 340,
+        "y": 120,
         "wires": [
             [
-                "lights_route"
+                "63f5f2d388e887f2"
             ]
         ]
     },
     {
-        "id": "lights_route",
+        "id": "63f5f2d388e887f2",
         "type": "switch",
-        "z": "eyes_tab",
+        "z": "hal_tab",
         "name": "show?",
         "property": "payload",
         "propertyType": "msg",
@@ -180,70 +100,121 @@
         "repair": false,
         "outputs": 2,
         "x": 670,
-        "y": 340,
+        "y": 120,
         "wires": [
             [
-                "lights_blue_fire"
+                "e2c0f0cecab6010e"
             ],
             [
-                "lights_nighttime"
+                "6f74e4a91271fa0a"
             ]
         ]
     },
     {
-        "id": "lights_blue_fire",
+        "id": "e2c0f0cecab6010e",
         "type": "api-call-service",
-        "z": "eyes_tab",
+        "z": "hal_tab",
         "name": "Blue fire",
-        "server": "",
+        "server": "4a1b3540.fb02ac",
+        "version": 7,
+        "debugenabled": false,
         "action": "scene.turn_on",
-        "domain": "scene",
+        "floorId": [],
+        "areaId": [],
+        "deviceId": [],
         "entityId": [
             "scene.govee_to_mqtt_one_click_leisure_blue_fire"
         ],
-        "areaId": [],
-        "deviceId": [],
-        "floorId": [],
         "labelId": [],
         "data": "",
+        "dataType": "jsonata",
         "mergeContext": "",
         "mustacheAltTags": false,
         "outputProperties": [],
         "queue": "none",
         "blockInputOverrides": true,
+        "domain": "scene",
+        "service": "turn_on",
         "x": 880,
-        "y": 320,
+        "y": 100,
         "wires": [
             []
-        ],
-        "version": 7
+        ]
     },
     {
-        "id": "lights_nighttime",
+        "id": "6f74e4a91271fa0a",
         "type": "api-call-service",
-        "z": "eyes_tab",
+        "z": "hal_tab",
         "name": "Nighttime",
-        "server": "",
+        "server": "4a1b3540.fb02ac",
+        "version": 7,
+        "debugenabled": false,
         "action": "scene.turn_on",
-        "domain": "scene",
+        "floorId": [],
+        "areaId": [],
+        "deviceId": [],
         "entityId": [
             "scene.govee_to_mqtt_one_click_leisure_night_mode"
         ],
-        "areaId": [],
-        "deviceId": [],
-        "floorId": [],
         "labelId": [],
         "data": "",
+        "dataType": "jsonata",
         "mergeContext": "",
         "mustacheAltTags": false,
         "outputProperties": [],
         "queue": "none",
         "blockInputOverrides": true,
+        "domain": "scene",
+        "service": "turn_on",
         "x": 880,
-        "y": 360,
+        "y": 140,
         "wires": [
             []
-        ],
-        "version": 7
+        ]
+    },
+    {
+        "id": "72ab90d8c5686b1e",
+        "type": "mqtt out",
+        "z": "hal_tab",
+        "name": "eyes command",
+        "topic": "house/show/command",
+        "qos": "1",
+        "retain": "true",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "eyes_broker",
+        "x": 340,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "eyes_broker",
+        "type": "mqtt-broker",
+        "name": "Mosquitto",
+        "broker": "192.168.86.5",
+        "port": "1883",
+        "clientid": "nodered-halloween",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
     }
 ]
