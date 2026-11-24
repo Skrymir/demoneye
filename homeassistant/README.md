@@ -81,7 +81,7 @@ and a Pi that reboots mid-evening picks up the current state at once.
 
 **Who publishes it:** the house's **Holiday Shows** dispatcher in Node-RED, when
 the Home Assistant dropdown `input_select.holiday_season` is `Halloween`. It turns
-the show on in the evening and off at 10 PM, and sends Christmas its own topic
+the show on at golden hour and off at 10 PM, and sends Christmas its own topic
 (`house/christmas/command`) the rest of the time. Its flows, the schedule and the
 whole design live in the
 [christmas-show repo's `homeassistant/`](https://github.com/Skrymir/christmas-show/tree/master/homeassistant);
